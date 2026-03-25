@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: spring-ai-alibaba-demo
+  ai:
+    dashscope:
+      api-key: ${AI_DASHSCOPE_API_KEY:}
+      chat:
+        options:
+          model: ${DASHSCOPE_MODEL:qwen-plus}
+          temperature: ${DASHSCOPE_TEMPERATURE:0.7}
+
+server:
+  port: 8080
+
+demo:
+  ai:
+    model: ${DASHSCOPE_MODEL:qwen-plus}
+    temperature: ${DASHSCOPE_TEMPERATURE:0.7}
+    top-p: ${DASHSCOPE_TOP_P:0.8}
+    system-prompt: ${DEMO_SYSTEM_PROMPT:你是一个专业、友好、简洁的 AI 助手，请优先使用中文回答。}
