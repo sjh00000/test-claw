@@ -2,10 +2,12 @@ package com.example.springaialibabademo.controller;
 
 import java.time.OffsetDateTime;
 
+import com.example.springaialibabademo.service.SimpleService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class ChatController {
 
     private final ChatClient chatClient;
+    @Autowired
+    private SimpleService simpleService;
 
     public ChatController(ChatClient chatClient) {
         this.chatClient = chatClient;
@@ -37,8 +41,8 @@ public class ChatController {
     }
 
     @GetMapping("/open")
-    public ChatResponse open(@RequestParam(defaultValue = "") String message) {
-        return new ChatResponse(message, generateReply(message), OffsetDateTime.now());
+    public String open(@RequestParam(defaultValue = "") String message) {
+        return simpleService.getString(message);
     }
 
     @PostMapping
