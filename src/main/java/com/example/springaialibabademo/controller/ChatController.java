@@ -31,6 +31,11 @@ public class ChatController {
         return new ChatResponse(message, generateReply(message), OffsetDateTime.now());
     }
 
+    @GetMapping("/test")
+    public ChatResponse testClaw(@RequestParam(defaultValue = "") String message) {
+        return new ChatResponse(message, generateReply(message), OffsetDateTime.now());
+    }
+
     @PostMapping
     public ChatResponse chat(@Valid @RequestBody ChatRequest request) {
         return new ChatResponse(request.message(), generateReply(request.message()), OffsetDateTime.now());
