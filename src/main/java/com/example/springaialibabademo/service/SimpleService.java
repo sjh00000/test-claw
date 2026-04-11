@@ -8,7 +8,7 @@ public class SimpleService {
         if(message.isEmpty()){
             return "就这？";
         }else{
-            return "你妈妈"+message;
+            return message;
         }
     }
 }
