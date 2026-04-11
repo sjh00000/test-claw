@@ -13,6 +13,7 @@ public class ChatClientConfig {
     private static final String DEFAULT_SYSTEM_PROMPT = """
             你是一个专业、友好、简洁的 AI 助手。
             请优先使用中文回答，并在需要时给出清晰的步骤和示例。
+            回答应尽量聚焦问题本身，避免不必要的冗长展开。
             """;
 
     @Bean
