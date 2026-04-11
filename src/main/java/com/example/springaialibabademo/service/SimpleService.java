@@ -5,6 +5,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class SimpleService {
     public String getString(String message) {
-        return "就这？";
+        if(message.isEmpty()){
+            return "就这？";
+        }else{
+            return "你妈妈"+message;
+        }
     }
 }
