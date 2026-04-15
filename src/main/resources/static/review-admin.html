@@ -159,8 +159,12 @@
       top:20px;
       align-self:start;
       align-content:flex-start;
+      justify-content:flex-start;
       height:auto;
       max-height:calc(100vh - 24px);
+    }
+    .sidebar-stack > section{
+      flex:0 0 auto;
     }
     .panel-head{
       display:flex;
@@ -339,12 +343,26 @@
       font-weight:700;
     }
     .ranking-panel{padding:22px}
-    .ranking-panel.compact{display:grid;grid-template-rows:auto minmax(0,1fr)}
+    .ranking-panel.compact{
+      display:grid;
+      gap:18px;
+      max-height:calc(100vh - 24px);
+      overflow:hidden;
+    }
+    .side-section{
+      display:grid;
+      gap:14px;
+      min-height:0;
+    }
+    .side-section + .side-section{
+      padding-top:18px;
+      border-top:1px solid rgba(163,205,227,.12);
+    }
     .ranking-list{display:grid;gap:12px}
     .ranking-scroll{
       overflow:auto;
       padding-right:6px;
-      max-height:min(52vh,560px);
+      max-height:340px;
     }
     .ranking-scroll::-webkit-scrollbar{width:8px}
     .ranking-scroll::-webkit-scrollbar-thumb{background:rgba(163,205,227,.18);border-radius:999px}
@@ -452,6 +470,7 @@
     @media (max-width:1280px){
       .hero,.dashboard,.visual-grid{grid-template-columns:1fr}
       .sidebar-stack{position:static;max-height:none;display:flex}
+      .ranking-panel.compact{max-height:none}
       .ranking-scroll{max-height:none;padding-right:0}
       .kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
     }
@@ -463,12 +482,16 @@
   </style>
 </head>
 <body>
+<script>
+  if (window.location.port === '63342') {
+    window.location.replace(`http://localhost:8080/review-admin.html${window.location.search || ''}${window.location.hash || ''}`);
+  }
+</script>
 <div id="app" class="app">
   <section class="panel hero">
     <div>
       <span class="eyebrow">OpenClaw BI Dashboard</span>
       <h1>提交审查指挥看板</h1>
-      <p class="hero-copy">把近期提交风险、趋势波动、重点人员和审查明细放到同一块屏里。点上方指标卡可以快速切换筛选范围，下面明细会跟着联动。</p>
       <div class="hero-actions">
         <button class="btn btn-primary" @click="refreshAll">刷新数据</button>
         <button class="btn btn-ghost" @click="exportSnapshot">导出摘要</button>
@@ -675,58 +698,59 @@
       </section>
     </div>
 
-    <aside class="stack sidebar-stack">
+    <aside class="sidebar-stack">
       <section class="panel ranking-panel compact">
-        <div class="panel-head">
-          <div>
-            <div class="section-tag">Ranking</div>
-            <div class="panel-title">高风险人员排行</div>
-            <div class="panel-subtitle">只保留高风险排行，便于快速发现重点跟进对象。</div>
+        <div class="side-section">
+          <div class="panel-head" style="margin-bottom:0">
+            <div>
+              <div class="section-tag">Ranking</div>
+              <div class="panel-title">高风险人员排行</div>
+              <div class="panel-subtitle">只保留高风险排行，便于快速发现重点跟进对象。</div>
+            </div>
           </div>
-        </div>
-        <div v-if="authorRanking.length" class="ranking-scroll">
-          <div class="ranking-list">
-            <article v-for="(item,index) in authorRanking" :key="`${item.name}-${index}`" class="ranking-item">
-              <div class="ranking-top">
-                <div class="ranking-name">
-                  <span class="ranking-index">{{ index + 1 }}</span>
-                  <span>{{ item.name || '未知作者' }}</span>
+          <div v-if="authorRanking.length" class="ranking-scroll">
+            <div class="ranking-list">
+              <article v-for="(item,index) in authorRanking" :key="`${item.name}-${index}`" class="ranking-item">
+                <div class="ranking-top">
+                  <div class="ranking-name">
+                    <span class="ranking-index">{{ index + 1 }}</span>
+                    <span>{{ item.name || '未知作者' }}</span>
+                  </div>
+                  <span class="risk-tag risk-high">高风险</span>
                 </div>
-                <span class="risk-tag risk-high">高风险</span>
-              </div>
-              <div class="bar">
-                <div class="bar-fill" :style="{ width: rankingWidth(item.totalCount) }"></div>
-              </div>
-              <div class="ranking-meta">
-                <span class="pill">高风险 {{ item.totalCount }}</span>
-                <span class="pill">问题 {{ item.findingCount }}</span>
-              </div>
-            </article>
+                <div class="bar">
+                  <div class="bar-fill" :style="{ width: rankingWidth(item.totalCount) }"></div>
+                </div>
+                <div class="ranking-meta">
+                  <span class="pill">高风险 {{ item.totalCount }}</span>
+                  <span class="pill">问题 {{ item.findingCount }}</span>
+                </div>
+              </article>
+            </div>
           </div>
+          <div v-else class="empty">当前没有高风险排行数据</div>
         </div>
-        <div v-else class="empty">当前没有高风险排行数据</div>
-      </section>
-
-      <section class="panel ranking-panel">
-        <div class="panel-head">
-          <div>
-            <div class="section-tag">Snapshot</div>
-            <div class="panel-title">当前概况</div>
-            <div class="panel-subtitle">给你一个简短摘要，适合复制到日报或群里。</div>
+        <div class="side-section">
+          <div class="panel-head" style="margin-bottom:0">
+            <div>
+              <div class="section-tag">Snapshot</div>
+              <div class="panel-title">当前概况</div>
+              <div class="panel-subtitle">给你一个简短摘要，适合复制到日报或群里。</div>
+            </div>
           </div>
-        </div>
-        <div class="ranking-list">
-          <div class="ranking-item">
-            <div class="subject">总提交 {{ overview.totalCount }}</div>
-            <div class="subtext">中高风险合计 {{ overview.highRiskCount + overview.mediumRiskCount }}</div>
-          </div>
-          <div class="ranking-item">
-            <div class="subject">无风险 {{ overview.noRiskCount }}</div>
-            <div class="subtext">待回传 {{ overview.pendingCount }} / 已忽略 {{ overview.ignoredCount }}</div>
-          </div>
-          <div class="ranking-item">
-            <div class="subject">当前筛选</div>
-            <div class="subtext">{{ activeStatKey ? statLabel(activeStatKey) : '全部记录' }}</div>
+          <div class="ranking-list">
+            <div class="ranking-item">
+              <div class="subject">总提交 {{ overview.totalCount }}</div>
+              <div class="subtext">中高风险合计 {{ overview.highRiskCount + overview.mediumRiskCount }}</div>
+            </div>
+            <div class="ranking-item">
+              <div class="subject">无风险 {{ overview.noRiskCount }}</div>
+              <div class="subtext">待回传 {{ overview.pendingCount }} / 已忽略 {{ overview.ignoredCount }}</div>
+            </div>
+            <div class="ranking-item">
+              <div class="subject">当前筛选</div>
+              <div class="subtext">{{ activeStatKey ? statLabel(activeStatKey) : '全部记录' }}</div>
+            </div>
           </div>
         </div>
       </section>

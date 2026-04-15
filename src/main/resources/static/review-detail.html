@@ -187,6 +187,11 @@
   </style>
 </head>
 <body>
+<script>
+  if (window.location.port === '63342') {
+    window.location.replace(`http://localhost:8080/review-detail.html${window.location.search || ''}${window.location.hash || ''}`);
+  }
+</script>
 <div id="app" class="app">
   <section class="panel hero">
     <div>
