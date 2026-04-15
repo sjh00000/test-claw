@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>提交审查后台</title>
+  <style>
+    :root { --bg:#f6efe6; --panel:#fffaf4; --line:#e6d9ca; --text:#24180f; --muted:#786555; --accent:#9f4a27; --accent2:#7e3117; --ok:#216b4b; --bad:#a13131; --wait:#9b6d0d; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; color:var(--text); background:linear-gradient(135deg,#f8f2ea,#eee0cf); }
+    .wrap { width:min(1440px,100%); margin:0 auto; padding:24px; display:grid; gap:18px; }
+    .card { background:rgba(255,250,244,.92); border:1px solid var(--line); border-radius:24px; box-shadow:0 18px 60px rgba(69,40,19,.08); }
+    .hero { padding:24px 28px; display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
+    .badge { display:inline-block; padding:6px 12px; border-radius:999px; background:rgba(159,74,39,.1); color:var(--accent2); font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
+    h1,h2,h3,p { margin:0; }
+    h1 { margin-top:12px; font-size:42px; line-height:1.05; letter-spacing:-.04em; }
+    .desc { margin-top:10px; color:var(--muted); line-height:1.8; max-width:760px; }
+    .btns,.actions,.pager { display:flex; gap:10px; flex-wrap:wrap; }
+    button,.link-btn { border:none; border-radius:999px; padding:11px 16px; font:inherit; cursor:pointer; text-decoration:none; }
+    .primary { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; }
+    .secondary { background:#fff; color:var(--text); border:1px solid var(--line); }
+    .stats { display:grid; grid-template-columns:repeat(6,1fr); gap:14px; }
+    .stat { padding:18px; }
+    .stat.clickable { cursor:pointer; transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+    .stat.clickable:hover { transform:translateY(-2px); box-shadow:0 16px 36px rgba(69,40,19,.10); }
+    .stat.active { border-color:rgba(159,74,39,.55); box-shadow:0 0 0 2px rgba(159,74,39,.12); }
+    .label { color:var(--muted); font-size:13px; }
+    .value { margin-top:10px; font-size:32px; font-weight:800; letter-spacing:-.05em; }
+    .small { margin-top:8px; color:var(--muted); font-size:12px; }
+    .main { display:grid; grid-template-columns:1.7fr .9fr; gap:18px; }
+    .panel { padding:22px; }
+    .panel-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:16px; }
+    .sub { margin-top:6px; color:var(--muted); font-size:13px; line-height:1.6; }
+    .trend,.rank,.detail { display:grid; gap:10px; }
+    .trend { grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); }
+    .item { padding:14px; border:1px solid var(--line); border-radius:18px; background:#fff; }
+    .item strong { display:block; margin-top:6px; font-size:18px; }
+    .rank-row { display:flex; justify-content:space-between; gap:10px; align-items:center; }
+    .filters { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+    .field { display:grid; gap:8px; }
+    .field label { font-size:13px; color:var(--muted); }
+    input,select,textarea { width:100%; padding:11px 12px; border-radius:14px; border:1px solid var(--line); background:#fff; color:var(--text); font:inherit; }
+    textarea { min-height:110px; resize:vertical; line-height:1.7; }
+    .table-box { overflow:auto; border:1px solid var(--line); border-radius:18px; background:#fff; }
+    table { width:100%; min-width:960px; border-collapse:collapse; }
+    th,td { padding:14px 16px; text-align:left; border-bottom:1px solid #f0e4d7; vertical-align:top; font-size:14px; }
+    th { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; background:#fff9f3; }
+    .tag { display:inline-flex; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+    .pass { color:var(--ok); background:rgba(33,107,75,.12); }
+    .fail { color:var(--bad); background:rgba(161,49,49,.12); }
+    .pending { color:var(--wait); background:rgba(155,109,13,.12); }
+    .default { color:var(--muted); background:rgba(120,101,85,.12); }
+    .muted { color:var(--muted); }
+    .mono { font-family:Consolas,"Courier New",monospace; font-size:12px; word-break:break-all; }
+    .subject { font-weight:700; line-height:1.6; }
+    .empty,.tip,.error { padding:14px 16px; border-radius:16px; }
+    .empty { border:1px dashed var(--line); text-align:center; color:var(--muted); background:rgba(255,255,255,.65); }
+    .tip { background:rgba(159,74,39,.08); color:var(--accent2); }
+    .error { background:rgba(161,49,49,.1); color:var(--bad); }
+    .hidden { display:none !important; }
+    .detail-box { padding:16px; border:1px solid var(--line); border-radius:18px; background:#fff; }
+    .kv { display:grid; grid-template-columns:100px 1fr; gap:10px; padding:7px 0; border-bottom:1px dashed #efe2d6; }
+    .kv:last-child { border-bottom:none; }
+    .k { color:var(--muted); font-size:13px; }
+    .v { line-height:1.7; word-break:break-word; }
+    @media (max-width:1180px) { .stats { grid-template-columns:repeat(3,1fr); } .main { grid-template-columns:1fr; } }
+    @media (max-width:820px) { .wrap { padding:16px; } .hero { flex-direction:column; padding:20px; } .stats,.filters { grid-template-columns:1fr; } .kv { grid-template-columns:1fr; } h1 { font-size:34px; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <section class="card hero">
+    <div>
+      <span class="badge">OpenClaw Review Admin</span>
+      <h1>提交审查后台</h1>
+      <p class="desc">直接读取本地 SQLite 审查日志，集中查看提交记录、审查趋势和人员风险排行。</p>
+    </div>
+    <div class="btns">
+      <button id="refresh-btn" class="primary">刷新数据</button>
+      <a class="link-btn secondary" href="/">返回首页</a>
+    </div>
+  </section>
+
+  <section id="stats" class="stats"></section>
+
+  <section class="main">
+    <div style="display:grid;gap:18px;">
+      <section class="card panel">
+        <div class="panel-head">
+          <div>
+            <h2>近 7 天趋势</h2>
+            <div class="sub">按创建时间统计最近 7 天的审查数量和结果分布。</div>
+          </div>
+        </div>
+        <div id="overview-loading" class="tip hidden">概览数据加载中...</div>
+        <div id="overview-error" class="error hidden"></div>
+        <div id="trend" class="trend"></div>
+      </section>
+
+      <section class="card panel">
+        <div class="panel-head">
+          <div>
+            <h2>提交记录</h2>
+            <div id="records-subtitle" class="sub">支持按关键词、结果、仓库筛选，并查看单次审查完整明细。</div>
+          </div>
+        </div>
+
+        <div class="filters">
+          <div class="field">
+            <label for="keyword">关键词</label>
+            <input id="keyword" placeholder="commit / 作者 / 路径">
+          </div>
+          <div class="field">
+            <label for="reviewResult">风险等级</label>
+            <select id="reviewResult">
+              <option value="">全部</option>
+              <option value="高风险">高风险</option>
+              <option value="中风险">中风险</option>
+              <option value="低风险">低风险</option>
+              <option value="无风险">无风险</option>
+              <option value="待回传">待回传</option>
+              <option value="已忽略">已忽略</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="repoKey">仓库标识</label>
+            <select id="repoKey">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="pageSize">每页条数</label>
+            <select id="pageSize">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="actions" style="margin-top:14px;">
+          <button id="search-btn" class="primary">查询</button>
+          <button id="reset-btn" class="secondary">重置</button>
+        </div>
+
+        <div id="records-loading" class="tip hidden" style="margin-top:14px;">提交记录加载中...</div>
+        <div id="records-error" class="error hidden" style="margin-top:14px;"></div>
+
+        <div class="table-box" style="margin-top:14px;">
+          <table>
+            <thead>
+            <tr>
+              <th>结果</th>
+              <th>提交信息</th>
+              <th>作者</th>
+              <th>仓库</th>
+              <th>统计</th>
+              <th>时间</th>
+              <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="records-body"></tbody>
+          </table>
+        </div>
+
+        <div class="pager" style="justify-content:space-between;align-items:center;margin-top:14px;">
+          <div id="pager-text" class="muted">共 0 条，当前第 1 页 / 1 页</div>
+          <div class="pager">
+            <button id="prev-btn" class="secondary">上一页</button>
+            <button id="next-btn" class="secondary">下一页</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside style="display:grid;gap:18px;">
+      <section class="card panel">
+        <div class="panel-head">
+          <div>
+            <h2>高风险人员排行</h2>
+            <div class="sub">仅统计高风险审查记录，用于识别需要优先处理的提交人。</div>
+          </div>
+        </div>
+        <div id="author-ranking" class="rank"></div>
+      </section>
+
+      <section class="card panel">
+        <div class="panel-head">
+          <div>
+            <h2>审查详情</h2>
+            <div class="sub">点击左侧记录查看完整的审查上下文。</div>
+          </div>
+        </div>
+        <div id="detail-loading" class="tip hidden">详情加载中...</div>
+        <div id="detail-error" class="error hidden"></div>
+        <div id="detail-empty" class="empty">尚未选择任何提交记录</div>
+        <div id="detail" class="detail hidden"></div>
+      </section>
+    </aside>
+  </section>
+</div>
+
+<script>
+  const API_BASE = (() => {
+    if (window.location.port === '63342') {
+      return 'http://localhost:8080';
+    }
+    return window.location.origin;
+  })();
+
+  const state = {
+    overview: { totalCount: 0, highRiskCount: 0, mediumRiskCount: 0, lowRiskCount: 0, noRiskCount: 0, ignoredCount: 0, pendingCount: 0, todayCount: 0, distinctRepoCount: 0, recentTrend: [] },
+    records: { total: 0, page: 1, pageSize: 20, records: [] },
+    pagination: { page: 1, pageSize: 20 },
+    filters: { keyword: '', reviewResult: '', repoKey: '' },
+    repoKeys: [],
+    authorRanking: [],
+    selectedRecord: null,
+    activeStatKey: ''
+  };
+
+  const el = {
+    stats: document.getElementById('stats'),
+    trend: document.getElementById('trend'),
+    authorRanking: document.getElementById('author-ranking'),
+    recordsBody: document.getElementById('records-body'),
+    pagerText: document.getElementById('pager-text'),
+    recordsSubtitle: document.getElementById('records-subtitle'),
+    detail: document.getElementById('detail'),
+    detailEmpty: document.getElementById('detail-empty'),
+    overviewLoading: document.getElementById('overview-loading'),
+    overviewError: document.getElementById('overview-error'),
+    recordsLoading: document.getElementById('records-loading'),
+    recordsError: document.getElementById('records-error'),
+    detailLoading: document.getElementById('detail-loading'),
+    detailError: document.getElementById('detail-error'),
+    keyword: document.getElementById('keyword'),
+    reviewResult: document.getElementById('reviewResult'),
+    repoKey: document.getElementById('repoKey'),
+    pageSize: document.getElementById('pageSize'),
+    prevBtn: document.getElementById('prev-btn'),
+    nextBtn: document.getElementById('next-btn')
+  };
+
+  function setVisible(node, visible) {
+    node.classList.toggle('hidden', !visible);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function shortSha(value) {
+    return value ? value.slice(0, 12) : '-';
+  }
+
+  function formatTime(value) {
+    return value ? value.replace('T', ' ') : '-';
+  }
+
+  function tagClass(result) {
+    if (result === '无风险') return 'pass';
+    if (result === '高风险' || result === '中风险') return 'fail';
+    if (result === '低风险') return 'default';
+    if (result === '待回传') return 'pending';
+    return 'default';
+  }
+
+  async function parseJson(response) {
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.message || '请求失败');
+    }
+    return payload;
+  }
+
+  function apiUrl(path) {
+    return `${API_BASE}${path}`;
+  }
+
+  function applyStatFilter(statKey) {
+    state.activeStatKey = statKey;
+    state.pagination.page = 1;
+    renderStats();
+    loadRecords().then(() => {
+      document.querySelector('.table-box')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  function renderStats() {
+    const cards = [
+      { key: '', label: '总提交数', value: state.overview.totalCount, desc: '点击查看全部记录' },
+      { key: 'high', label: '高风险', value: state.overview.highRiskCount, desc: '点击查看高风险记录' },
+      { key: 'medium', label: '中风险', value: state.overview.mediumRiskCount, desc: '点击查看中风险记录' },
+      { key: 'low', label: '低风险', value: state.overview.lowRiskCount, desc: '点击查看低风险记录' },
+      { key: 'safe', label: '无风险', value: state.overview.noRiskCount, desc: '点击查看无风险记录' },
+      { key: 'pending', label: '待回传', value: state.overview.pendingCount, desc: '点击查看待回传记录' },
+      { key: 'today', label: '今日新增', value: state.overview.todayCount, desc: '点击查看今日新增记录' }
+    ];
+    el.stats.innerHTML = cards.map(card => `
+      <article class="card stat clickable ${state.activeStatKey === card.key ? 'active' : ''}" data-stat-key="${escapeHtml(card.key)}">
+        <div class="label">${escapeHtml(card.label)}</div>
+        <div class="value">${escapeHtml(card.value)}</div>
+        <div class="small">${escapeHtml(card.desc)}</div>
+      </article>
+    `).join('');
+    document.querySelectorAll('[data-stat-key]').forEach(node => {
+      node.addEventListener('click', () => applyStatFilter(node.dataset.statKey || ''));
+    });
+  }
+
+  function renderTrend() {
+    if (!state.overview.recentTrend.length) {
+      el.trend.innerHTML = '<div class="empty">暂无趋势数据</div>';
+      return;
+    }
+    el.trend.innerHTML = state.overview.recentTrend.map(item => `
+      <div class="item">
+        <div class="label">${escapeHtml(item.day)}</div>
+        <strong>${escapeHtml(item.totalCount)}</strong>
+        <div class="muted">高 ${escapeHtml(item.highRiskCount)} / 中 ${escapeHtml(item.mediumRiskCount)} / 低 ${escapeHtml(item.lowRiskCount)}</div>
+        <div class="muted">无风险 ${escapeHtml(item.noRiskCount)} / 待回传 ${escapeHtml(item.pendingCount)}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderRanking(container, list, emptyText) {
+    if (!list.length) {
+      container.innerHTML = `<div class="empty">${escapeHtml(emptyText)}</div>`;
+      return;
+    }
+    container.innerHTML = list.map((item, index) => `
+      <div class="item rank-row">
+        <div>
+          <div>${index + 1}. ${escapeHtml(item.name || '未知')}</div>
+          <div class="muted">高风险 ${escapeHtml(item.totalCount)} / 问题 ${escapeHtml(item.findingCount)}</div>
+        </div>
+        <div class="muted">立刻修复 ${escapeHtml(item.immediateFixCount)}</div>
+      </div>
+    `).join('');
+  }
+
+  function summarizeAdvice(value) {
+    if (!value) {
+      return '无审查建议';
+    }
+    const singleLine = value.replace(/\s+/g, ' ').trim();
+    return singleLine.length > 44 ? `${singleLine.slice(0, 44)}...` : singleLine;
+  }
+
+  function updateRecordsSubtitle() {
+    const mapping = {
+      '': '支持按关键词、结果、仓库筛选，并查看单次审查完整明细。',
+      high: '当前查看“高风险”对应的提交记录。',
+      medium: '当前查看“中风险”对应的提交记录。',
+      low: '当前查看“低风险”对应的提交记录。',
+      safe: '当前查看“无风险”对应的提交记录。',
+      pending: '当前查看“待回传”对应的提交记录。',
+      today: '当前查看“今日新增”对应的提交记录。'
+    };
+    el.recordsSubtitle.textContent = mapping[state.activeStatKey] || mapping[''];
+  }
+
+  function renderRepoKeys() {
+    const currentValue = state.filters.repoKey;
+    el.repoKey.innerHTML = '<option value="">全部</option>' + state.repoKeys.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
+    el.repoKey.value = currentValue;
+  }
+
+  function renderRecords() {
+    if (!state.records.records.length) {
+      el.recordsBody.innerHTML = '<tr><td colspan="7"><div class="empty">当前没有匹配到提交记录</div></td></tr>';
+    } else {
+      el.recordsBody.innerHTML = state.records.records.map(record => `
+        <tr>
+          <td><span class="tag ${tagClass(record.reviewResult)}">${escapeHtml(record.reviewResult || '未知')}</span></td>
+          <td>
+            <div class="subject">${escapeHtml(record.commitSubject || '无标题提交')}</div>
+            <div class="muted">SHA ${escapeHtml(shortSha(record.commitSha))} / 风险 ${escapeHtml(record.riskLevel || '-')}</div>
+            <div class="muted">${escapeHtml(summarizeAdvice(record.reviewAdvice))}</div>
+          </td>
+          <td>
+            <div>${escapeHtml(record.authorName || '未知作者')}</div>
+            <div class="muted">${escapeHtml(record.authorEmail || '-')}</div>
+          </td>
+          <td>
+            <div>${escapeHtml(record.repoKey || '-')}</div>
+            <div class="muted">${escapeHtml(record.repositoryPath || '-')}</div>
+          </td>
+          <td>
+            <div>问题 ${escapeHtml(record.findingCount)}</div>
+            <div class="muted">改动 ${escapeHtml(record.changedFileCount)} / 关联 ${escapeHtml(record.relatedFileCount)}</div>
+            <div class="muted">规范 ${escapeHtml(record.standardCount)}${record.immediateFix ? ' / 需立刻修复' : ''}</div>
+          </td>
+          <td>
+            <div>${escapeHtml(formatTime(record.committedAt))}</div>
+            <div class="muted">入库 ${escapeHtml(formatTime(record.createdAt))}</div>
+          </td>
+          <td><button class="secondary detail-btn" data-id="${escapeHtml(record.id)}">查看详情</button></td>
+        </tr>
+      `).join('');
+    }
+
+    const totalPages = Math.max(1, Math.ceil((state.records.total || 0) / (state.records.pageSize || state.pagination.pageSize || 20)));
+    el.pagerText.textContent = `共 ${state.records.total || 0} 条，当前第 ${state.records.page || 1} 页 / ${totalPages} 页`;
+    el.prevBtn.disabled = (state.records.page || 1) <= 1;
+    el.nextBtn.disabled = (state.records.page || 1) >= totalPages;
+
+    document.querySelectorAll('.detail-btn').forEach(button => {
+      button.addEventListener('click', () => loadDetail(button.dataset.id));
+    });
+    updateRecordsSubtitle();
+  }
+
+  function detailRow(label, value) {
+    return `<div class="kv"><div class="k">${escapeHtml(label)}</div><div class="v">${escapeHtml(value || '-')}</div></div>`;
+  }
+
+  function renderDetail() {
+    if (!state.selectedRecord) {
+      setVisible(el.detailEmpty, true);
+      setVisible(el.detail, false);
+      el.detail.innerHTML = '';
+      return;
+    }
+
+    const item = state.selectedRecord;
+    setVisible(el.detailEmpty, false);
+    setVisible(el.detail, true);
+    el.detail.innerHTML = `
+      <div class="detail-box">
+        <h3>基础信息</h3>
+        ${detailRow('结果', item.reviewResult)}
+        ${detailRow('标题', item.commitSubject)}
+        ${detailRow('Commit', item.commitSha)}
+        ${detailRow('作者', `${item.authorName || '-'} / ${item.authorEmail || '-'}`)}
+        ${detailRow('仓库', `${item.repoKey || '-'} / ${item.repositoryPath || '-'}`)}
+        ${detailRow('统计', `问题 ${item.findingCount || 0}，改动 ${item.changedFileCount || 0}，关联 ${item.relatedFileCount || 0}，规范 ${item.standardCount || 0}`)}
+      </div>
+      <div class="detail-box">
+        <h3>审查建议</h3>
+        <textarea readonly>${escapeHtml(item.reviewAdvice || '无审查建议')}</textarea>
+      </div>
+      <div class="detail-box">
+        <h3>路径与会话</h3>
+        ${detailRow('Markdown', item.markdownReportPath)}
+        ${detailRow('JSON', item.jsonReportPath)}
+        ${detailRow('Response', item.openclawResponsePath)}
+        ${detailRow('Reminder', item.reminderPath)}
+        ${detailRow('Session', item.sessionId)}
+        ${detailRow('Session File', item.sessionFilePath)}
+        ${detailRow('推送对象', `${item.deliveryTarget || '-'} / ${item.deliveryReceiveIdType || '-'}`)}
+      </div>
+    `;
+  }
+
+  async function loadOverview() {
+    setVisible(el.overviewLoading, true);
+    setVisible(el.overviewError, false);
+    try {
+      state.overview = await parseJson(await fetch(apiUrl('/api/review-admin/overview')));
+      renderStats();
+      renderTrend();
+    } catch (error) {
+      el.overviewError.textContent = error.message;
+      setVisible(el.overviewError, true);
+    } finally {
+      setVisible(el.overviewLoading, false);
+    }
+  }
+
+  async function loadRankings() {
+    try {
+      const author = await fetch(apiUrl('/api/review-admin/rankings/unqualified-authors?limit=8'));
+      state.authorRanking = await parseJson(author);
+      renderRanking(el.authorRanking, state.authorRanking, '暂无排行数据');
+    } catch (error) {
+      el.overviewError.textContent = error.message;
+      setVisible(el.overviewError, true);
+    }
+  }
+
+  async function loadRepoKeys() {
+    try {
+      state.repoKeys = await parseJson(await fetch(apiUrl('/api/review-admin/repo-keys')));
+      renderRepoKeys();
+    } catch (error) {
+      el.recordsError.textContent = error.message;
+      setVisible(el.recordsError, true);
+    }
+  }
+
+  async function loadRecords() {
+    setVisible(el.recordsLoading, true);
+    setVisible(el.recordsError, false);
+    try {
+      const params = new URLSearchParams({
+        page: String(state.pagination.page),
+        pageSize: String(state.pagination.pageSize)
+      });
+      if (state.filters.keyword) params.set('keyword', state.filters.keyword);
+      if (state.filters.reviewResult) params.set('reviewResult', state.filters.reviewResult);
+      if (state.filters.repoKey) params.set('repoKey', state.filters.repoKey);
+      if (state.activeStatKey) params.set('statKey', state.activeStatKey);
+      state.records = await parseJson(await fetch(apiUrl(`/api/review-admin/records?${params.toString()}`)));
+      renderRecords();
+    } catch (error) {
+      el.recordsError.textContent = error.message;
+      setVisible(el.recordsError, true);
+    } finally {
+      setVisible(el.recordsLoading, false);
+    }
+  }
+
+  async function loadDetail(id) {
+    setVisible(el.detailLoading, true);
+    setVisible(el.detailError, false);
+    try {
+      state.selectedRecord = await parseJson(await fetch(apiUrl(`/api/review-admin/records/${id}`)));
+      renderDetail();
+    } catch (error) {
+      state.selectedRecord = null;
+      renderDetail();
+      el.detailError.textContent = error.message;
+      setVisible(el.detailError, true);
+    } finally {
+      setVisible(el.detailLoading, false);
+    }
+  }
+
+  async function refreshAll() {
+    state.filters.keyword = el.keyword.value.trim();
+    state.filters.reviewResult = el.reviewResult.value;
+    state.filters.repoKey = el.repoKey.value;
+    state.pagination.pageSize = Number(el.pageSize.value);
+    await Promise.all([loadOverview(), loadRankings(), loadRepoKeys(), loadRecords()]);
+  }
+
+  function resetFilters() {
+    el.keyword.value = '';
+    el.reviewResult.value = '';
+    el.repoKey.value = '';
+    el.pageSize.value = '20';
+    state.filters = { keyword: '', reviewResult: '', repoKey: '' };
+    state.activeStatKey = '';
+    state.pagination.page = 1;
+    state.pagination.pageSize = 20;
+    renderStats();
+    loadRecords();
+  }
+
+  document.getElementById('refresh-btn').addEventListener('click', refreshAll);
+  document.getElementById('search-btn').addEventListener('click', () => {
+    state.filters.keyword = el.keyword.value.trim();
+    state.filters.reviewResult = el.reviewResult.value;
+    state.filters.repoKey = el.repoKey.value;
+    state.pagination.page = 1;
+    state.pagination.pageSize = Number(el.pageSize.value);
+    loadRecords();
+  });
+  document.getElementById('reset-btn').addEventListener('click', resetFilters);
+  el.pageSize.addEventListener('change', () => {
+    state.pagination.page = 1;
+    state.pagination.pageSize = Number(el.pageSize.value);
+    loadRecords();
+  });
+  el.prevBtn.addEventListener('click', () => {
+    if ((state.records.page || 1) <= 1) return;
+    state.pagination.page = (state.records.page || 1) - 1;
+    loadRecords();
+  });
+  el.nextBtn.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil((state.records.total || 0) / (state.records.pageSize || state.pagination.pageSize || 20)));
+    if ((state.records.page || 1) >= totalPages) return;
+    state.pagination.page = (state.records.page || 1) + 1;
+    loadRecords();
+  });
+
+  renderStats();
+  renderTrend();
+  renderRanking(el.authorRanking, [], '暂无排行数据');
+  renderRecords();
+  renderDetail();
+  refreshAll();
+</script>
+</body>
+</html>

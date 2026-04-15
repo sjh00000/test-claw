@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.springaialibabademo.reviewadmin.mapper.ReviewRunMapper">
+
+    <select id="selectOverviewNumbers" resultType="com.example.springaialibabademo.reviewadmin.model.ReviewOverviewNumbers">
+        SELECT
+            COUNT(*) AS total_count,
+            SUM(CASE WHEN review_result = '高风险' THEN 1 ELSE 0 END) AS high_risk_count,
+            SUM(CASE WHEN review_result = '中风险' THEN 1 ELSE 0 END) AS medium_risk_count,
+            SUM(CASE WHEN review_result = '低风险' THEN 1 ELSE 0 END) AS low_risk_count,
+            SUM(CASE WHEN review_result = '无风险' THEN 1 ELSE 0 END) AS no_risk_count,
+            SUM(CASE WHEN review_result = '已忽略' THEN 1 ELSE 0 END) AS ignored_count,
+            SUM(CASE WHEN review_result = '待回传' THEN 1 ELSE 0 END) AS pending_count,
+            SUM(CASE WHEN DATE(created_at, 'localtime') = DATE('now', 'localtime') THEN 1 ELSE 0 END) AS today_count,
+            COUNT(DISTINCT repo_key) AS distinct_repo_count
+        FROM review_runs
+    </select>
+
+    <select id="selectRecentTrend" resultType="com.example.springaialibabademo.reviewadmin.model.ReviewTrendPoint">
+        SELECT
+            DATE(created_at, 'localtime') AS day,
+            COUNT(*) AS total_count,
+            SUM(CASE WHEN review_result = '高风险' THEN 1 ELSE 0 END) AS high_risk_count,
+            SUM(CASE WHEN review_result = '中风险' THEN 1 ELSE 0 END) AS medium_risk_count,
+            SUM(CASE WHEN review_result = '低风险' THEN 1 ELSE 0 END) AS low_risk_count,
+            SUM(CASE WHEN review_result = '无风险' THEN 1 ELSE 0 END) AS no_risk_count,
+            SUM(CASE WHEN review_result = '已忽略' THEN 1 ELSE 0 END) AS ignored_count,
+            SUM(CASE WHEN review_result = '待回传' THEN 1 ELSE 0 END) AS pending_count
+        FROM review_runs
+        WHERE DATE(created_at, 'localtime') <![CDATA[>=]]> DATE('now', '-6 day', 'localtime')
+        GROUP BY DATE(created_at, 'localtime')
+        ORDER BY day ASC
+    </select>
+
+    <select id="selectUnqualifiedRepoRanking" resultType="com.example.springaialibabademo.reviewadmin.model.ReviewRankingItem">
+        SELECT
+            repository_path AS name,
+            COUNT(*) AS total_count,
+            SUM(CASE WHEN immediate_fix = 1 THEN 1 ELSE 0 END) AS immediate_fix_count,
+            SUM(finding_count) AS finding_count
+        FROM review_runs
+        WHERE review_result = '高风险'
+        GROUP BY repository_path
+        ORDER BY total_count DESC, finding_count DESC, name ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectUnqualifiedAuthorRanking" resultType="com.example.springaialibabademo.reviewadmin.model.ReviewRankingItem">
+        SELECT
+            COALESCE(NULLIF(author_name, ''), author_email, '未知作者') AS name,
+            COUNT(*) AS total_count,
+            SUM(CASE WHEN immediate_fix = 1 THEN 1 ELSE 0 END) AS immediate_fix_count,
+            SUM(finding_count) AS finding_count
+        FROM review_runs
+        WHERE review_result = '高风险'
+        GROUP BY COALESCE(NULLIF(author_name, ''), author_email, '未知作者')
+        ORDER BY total_count DESC, finding_count DESC, name ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectRepoKeys" resultType="java.lang.String">
+        SELECT DISTINCT repo_key
+        FROM review_runs
+        WHERE repo_key IS NOT NULL
+          AND repo_key != ''
+        ORDER BY repo_key ASC
+    </select>
+
+</mapper>

@@ -1,0 +1,35 @@
+package com.example.springaialibabademo.reviewadmin.model;
+
+public record ReviewRecordDetail(
+        long id,
+        String repoKey,
+        String repositoryPath,
+        String commitSha,
+        String authorName,
+        String authorEmail,
+        String commitSubject,
+        String committedAt,
+        String reviewResult,
+        String reviewAdvice,
+        String riskLevel,
+        boolean immediateFix,
+        int findingCount,
+        int changedFileCount,
+        int relatedFileCount,
+        int standardCount,
+        String reviewSource,
+        String markdownReportPath,
+        String jsonReportPath,
+        String openclawResponsePath,
+        String reminderPath,
+        String rawResponse,
+        String responsePayload,
+        String sessionId,
+        String sessionFilePath,
+        String sessionsRoot,
+        String deliveryTarget,
+        String deliveryReceiveIdType,
+        String createdAt,
+        String updatedAt
+) {
+}
