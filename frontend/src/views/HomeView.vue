@@ -17,14 +17,16 @@ const overview = ref({
 });
 const recentRecords = ref([]);
 
-const statCards = computed(() => [
-  { label: '高风险', value: overview.value.highRiskCount, note: '严重缺陷或阻塞问题' },
-  { label: '中风险', value: overview.value.mediumRiskCount, note: '明确问题，需要尽快整改' },
-  { label: '低风险', value: overview.value.lowRiskCount, note: '轻微问题，不构成阻塞' },
-  { label: '无风险', value: overview.value.noRiskCount, note: '未发现明确问题' },
-  { label: '待回传', value: overview.value.pendingCount, note: '审查结果未完成回传' },
-  { label: '覆盖仓库', value: overview.value.distinctRepoCount, note: '当前涉及的仓库数量' }
-]);
+const headlineMetrics = computed(() => {
+  const total = Number(overview.value.totalCount || 0);
+  const high = Number(overview.value.highRiskCount || 0);
+  const ratio = total ? `${Math.round((high / total) * 100)}%` : '0%';
+  return [
+    { label: '高风险占比', value: ratio, copy: `高风险 ${high} / 总提交 ${total}` },
+    { label: '待回传', value: overview.value.pendingCount || 0, copy: '等待消息回传或结果补齐' },
+    { label: '覆盖仓库', value: overview.value.distinctRepoCount || 0, copy: '当前已纳入统计的仓库数' }
+  ];
+});
 
 async function refreshAll() {
   const [overviewData, recordPage] = await Promise.all([
@@ -42,8 +44,21 @@ onMounted(refreshAll);
   <div class="page-grid">
     <section class="panel hero">
       <div>
-        <span class="eyebrow">OpenClaw Frontend</span>
+        <div class="hero-topbar">
+          <span class="eyebrow">OpenClaw Frontend</span>
+          <div class="hero-badge-group">
+            <span class="hero-badge">总记录 {{ overview.totalCount }}</span>
+            <span class="hero-badge">今日新增 {{ overview.todayCount }}</span>
+          </div>
+        </div>
         <h1>审查系统首页</h1>
+        <div class="hero-summary-grid">
+          <article v-for="metric in headlineMetrics" :key="metric.label" class="hero-summary-card">
+            <div class="hero-summary-label">{{ metric.label }}</div>
+            <div class="hero-summary-value">{{ metric.value }}</div>
+            <div class="hero-summary-copy">{{ metric.copy }}</div>
+          </article>
+        </div>
         <div class="hero-actions">
           <RouterLink class="btn btn-primary" to="/review-admin">进入 BI 看板</RouterLink>
           <button class="btn btn-ghost" @click="refreshAll">刷新首页数据</button>
@@ -51,24 +66,16 @@ onMounted(refreshAll);
       </div>
       <div class="hero-side">
         <div class="hero-stat">
-          <div class="hero-stat-label">总提交</div>
-          <div class="hero-stat-value">{{ overview.totalCount }}</div>
-          <div class="hero-stat-copy">当前数据库内的审查记录总数。</div>
+          <div class="hero-stat-label">风险分布</div>
+          <div class="hero-stat-value">{{ overview.highRiskCount }} / {{ overview.mediumRiskCount }}</div>
+          <div class="hero-stat-copy">高风险 / 中风险</div>
         </div>
         <div class="hero-stat">
-          <div class="hero-stat-label">今日新增</div>
-          <div class="hero-stat-value">{{ overview.todayCount }}</div>
-          <div class="hero-stat-copy">今天新增入库的提交审查数量。</div>
+          <div class="hero-stat-label">稳定记录</div>
+          <div class="hero-stat-value">{{ overview.noRiskCount }}</div>
+          <div class="hero-stat-copy">当前无风险记录数</div>
         </div>
       </div>
-    </section>
-
-    <section class="kpi-grid">
-      <article v-for="card in statCards" :key="card.label" class="kpi-card simple">
-        <div class="kpi-label">{{ card.label }}</div>
-        <div class="kpi-value">{{ card.value }}</div>
-        <div class="kpi-note">{{ card.note }}</div>
-      </article>
     </section>
 
     <section class="dashboard compact-home">
@@ -78,17 +85,17 @@ onMounted(refreshAll);
             <div>
               <div class="section-tag">Entry</div>
               <div class="panel-title">快捷入口</div>
-              <div class="panel-subtitle">需要分析就进 BI，看具体记录就进详情。</div>
+              <div class="panel-subtitle">按场景直接跳转。</div>
             </div>
           </div>
           <div class="quick-grid">
             <RouterLink class="quick-link" to="/review-admin">
               <h3>BI 看板</h3>
-              <p>查看扇形图、折线图、排行和表格，适合日常巡检和汇报。</p>
+              <p>集中查看趋势、排行、风险结构和明细表。</p>
             </RouterLink>
             <RouterLink class="quick-link" :to="recentRecords[0] ? `/review-detail/${recentRecords[0].id}` : '/review-admin'">
               <h3>最近一条详情</h3>
-              <p>直接打开最近一条提交的完整审查详情，查看建议和结构图。</p>
+              <p>直接进入最近一条提交的审查详情。</p>
             </RouterLink>
           </div>
         </section>
@@ -98,21 +105,29 @@ onMounted(refreshAll);
             <div>
               <div class="section-tag">Snapshot</div>
               <div class="panel-title">当前概况</div>
-              <div class="panel-subtitle">首页保留轻量摘要，不堆重图表，但把关键状态收进来。</div>
+              <div class="panel-subtitle">只保留首页该看的核心状态。</div>
             </div>
           </div>
-          <div class="ranking-list">
-            <div class="ranking-item">
-              <div class="subject">风险概况</div>
-              <div class="subtext">高风险 {{ overview.highRiskCount }} / 中风险 {{ overview.mediumRiskCount }} / 低风险 {{ overview.lowRiskCount }}</div>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="summary-label">高风险</div>
+              <div class="summary-value">{{ overview.highRiskCount }}</div>
+              <div class="summary-copy">需要优先跟进</div>
             </div>
-            <div class="ranking-item">
-              <div class="subject">稳定性</div>
-              <div class="subtext">无风险 {{ overview.noRiskCount }} / 待回传 {{ overview.pendingCount }} / 已忽略 {{ overview.ignoredCount }}</div>
+            <div class="summary-card">
+              <div class="summary-label">中风险</div>
+              <div class="summary-value">{{ overview.mediumRiskCount }}</div>
+              <div class="summary-copy">建议尽快处理</div>
             </div>
-            <div class="ranking-item">
-              <div class="subject">覆盖范围</div>
-              <div class="subtext">当前涉及仓库 {{ overview.distinctRepoCount }} 个，今日新增 {{ overview.todayCount }} 条。</div>
+            <div class="summary-card">
+              <div class="summary-label">待回传</div>
+              <div class="summary-value">{{ overview.pendingCount }}</div>
+              <div class="summary-copy">结果仍未完成回传</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">覆盖仓库</div>
+              <div class="summary-value">{{ overview.distinctRepoCount }}</div>
+              <div class="summary-copy">当前纳入统计的仓库数</div>
             </div>
           </div>
         </section>
@@ -125,7 +140,7 @@ onMounted(refreshAll);
               <div>
                 <div class="section-tag">Recent</div>
                 <div class="panel-title">最近提交</div>
-                <div class="panel-subtitle">保留关键摘要，点进去看完整详情。</div>
+                <div class="panel-subtitle">固定展示最近 4 条。</div>
               </div>
             </div>
             <div v-if="recentRecords.length" class="ranking-list">

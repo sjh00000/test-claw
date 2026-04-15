@@ -28,6 +28,22 @@ const statCards = computed(() => [
 
 const totalPages = computed(() => Math.max(1, Math.ceil((records.value.total || 0) / (records.value.pageSize || pagination.value.pageSize || 20))));
 
+const focusRiskTotal = computed(() => Number(overview.value.highRiskCount || 0) + Number(overview.value.mediumRiskCount || 0));
+
+const peakTrendDay = computed(() => {
+  const trend = Array.isArray(overview.value.recentTrend) ? overview.value.recentTrend : [];
+  if (!trend.length) {
+    return { day: '-', totalCount: 0 };
+  }
+  return trend.reduce((max, item) => ((item.totalCount || 0) > (max.totalCount || 0) ? item : max), trend[0]);
+});
+
+const headlineMetrics = computed(() => [
+  { label: '中高风险', value: focusRiskTotal.value, copy: '高风险与中风险的合计数量' },
+  { label: '峰值日期', value: peakTrendDay.value.day || '-', copy: `单日峰值 ${peakTrendDay.value.totalCount || 0}` },
+  { label: '当前筛选', value: statLabel(activeStatKey.value || '') || '全部', copy: '点击指标卡后这里同步更新' }
+]);
+
 const recordsSubtitle = computed(() => {
   const mapping = {
     '': '支持按关键词、风险等级、仓库筛选，并跳转到独立详情页。',
@@ -94,36 +110,6 @@ const riskOption = computed(() => ({
 function rankingWidth(value) {
   const max = Math.max(...authorRanking.value.map(item => Number(item.totalCount || 0)), 1);
   return `${Math.max(18, Math.round((Number(value || 0) / max) * 100))}%`;
-}
-
-function dayPrimaryRisk(item) {
-  if ((item.highRiskCount || 0) > 0) return '高风险';
-  if ((item.mediumRiskCount || 0) > 0) return '中风险';
-  if ((item.lowRiskCount || 0) > 0) return '低风险';
-  if ((item.noRiskCount || 0) > 0) return '无风险';
-  if ((item.pendingCount || 0) > 0) return '待回传';
-  return '未知';
-}
-
-function donutSvg(item) {
-  const values = [
-    { value: Number(item.highRiskCount || 0), color: '#f46d6d' },
-    { value: Number(item.mediumRiskCount || 0), color: '#ffb347' },
-    { value: Number(item.lowRiskCount || 0), color: '#58a6ff' },
-    { value: Number(item.noRiskCount || 0), color: '#2cd39a' },
-    { value: Number(item.pendingCount || 0), color: '#c59b47' }
-  ];
-  const total = values.reduce((sum, entry) => sum + entry.value, 0);
-  const radius = 30;
-  const circumference = 2 * Math.PI * radius;
-  let offset = 0;
-  const segments = total ? values.filter(entry => entry.value > 0).map(entry => {
-    const length = (entry.value / total) * circumference;
-    const segment = `<circle cx="44" cy="44" r="${radius}" fill="none" stroke="${entry.color}" stroke-width="12" stroke-dasharray="${length} ${circumference - length}" stroke-dashoffset="${-offset}" />`;
-    offset += length;
-    return segment;
-  }).join('') : '';
-  return `<svg viewBox="0 0 88 88" aria-hidden="true"><circle cx="44" cy="44" r="${radius}" fill="none" stroke="rgba(163,205,227,.12)" stroke-width="12"></circle>${segments}</svg><div class="donut-center">${total}</div>`;
 }
 
 async function loadOverviewData() {
@@ -219,8 +205,22 @@ watch(() => pagination.value.pageSize, () => {
   <div class="page-grid">
     <section class="panel hero">
       <div>
-        <span class="eyebrow">OpenClaw BI Dashboard</span>
+        <div class="hero-topbar">
+          <span class="eyebrow">OpenClaw BI Dashboard</span>
+          <div class="hero-badge-group">
+            <span class="hero-badge">总提交 {{ overview.totalCount }}</span>
+            <span class="hero-badge">高风险 {{ overview.highRiskCount }}</span>
+            <span class="hero-badge">中风险 {{ overview.mediumRiskCount }}</span>
+          </div>
+        </div>
         <h1>提交审查指挥看板</h1>
+        <div class="hero-summary-grid">
+          <article v-for="metric in headlineMetrics" :key="metric.label" class="hero-summary-card">
+            <div class="hero-summary-label">{{ metric.label }}</div>
+            <div class="hero-summary-value">{{ metric.value }}</div>
+            <div class="hero-summary-copy">{{ metric.copy }}</div>
+          </article>
+        </div>
         <div class="hero-actions">
           <button class="btn btn-primary" @click="refreshAll">刷新数据</button>
           <RouterLink class="btn btn-ghost" to="/">返回首页</RouterLink>
@@ -230,12 +230,12 @@ watch(() => pagination.value.pageSize, () => {
         <div class="hero-stat">
           <div class="hero-stat-label">今日新增</div>
           <div class="hero-stat-value">{{ overview.todayCount }}</div>
-          <div class="hero-stat-copy">今天新入库的审查记录数量，适合快速观察当前提交波动。</div>
+          <div class="hero-stat-copy">当天新增记录</div>
         </div>
         <div class="hero-stat">
           <div class="hero-stat-label">覆盖仓库</div>
           <div class="hero-stat-value">{{ overview.distinctRepoCount }}</div>
-          <div class="hero-stat-copy">当前数据涉及的仓库数，辅助判断审查活跃面。</div>
+          <div class="hero-stat-copy">当前活跃仓库数</div>
         </div>
       </div>
     </section>
@@ -255,32 +255,12 @@ watch(() => pagination.value.pageSize, () => {
             <div>
               <div class="section-tag">Overview</div>
               <div class="panel-title">风险趋势与结构</div>
-              <div class="panel-subtitle">左侧看 7 天风险变化，右侧看当前整体风险占比。</div>
+              <div class="panel-subtitle">左侧看趋势，右侧看整体结构。</div>
             </div>
           </div>
           <div class="visual-grid">
             <EChartPanel :option="trendOption" :height="360" />
             <EChartPanel :option="riskOption" :height="360" />
-          </div>
-          <div class="donut-grid">
-            <article v-for="item in overview.recentTrend" :key="item.day" class="donut-card">
-              <div class="donut-top">
-                <div>
-                  <div class="donut-day">{{ item.day }}</div>
-                  <div class="kpi-value" style="font-size:28px;margin-top:6px">{{ item.totalCount || 0 }}</div>
-                </div>
-                <span class="risk-tag" :class="riskClass(dayPrimaryRisk(item))">{{ dayPrimaryRisk(item) }}</span>
-              </div>
-              <div class="donut-wrap">
-                <div class="donut-svg" v-html="donutSvg(item)"></div>
-                <div class="donut-legend">
-                  <div class="legend-item"><span class="legend-dot" style="background:#f46d6d"></span><span>高风险</span><span>{{ item.highRiskCount || 0 }}</span></div>
-                  <div class="legend-item"><span class="legend-dot" style="background:#ffb347"></span><span>中风险</span><span>{{ item.mediumRiskCount || 0 }}</span></div>
-                  <div class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span><span>低风险</span><span>{{ item.lowRiskCount || 0 }}</span></div>
-                  <div class="legend-item"><span class="legend-dot" style="background:#2cd39a"></span><span>无风险</span><span>{{ item.noRiskCount || 0 }}</span></div>
-                </div>
-              </div>
-            </article>
           </div>
         </section>
 
@@ -320,7 +300,7 @@ watch(() => pagination.value.pageSize, () => {
             <div>
               <div class="section-tag">Data</div>
               <div class="panel-title">审查明细列表</div>
-              <div class="panel-subtitle">列表会跟随指标卡、筛选项和分页状态联动。</div>
+              <div class="panel-subtitle">跟随指标卡、筛选项和分页状态联动。</div>
             </div>
           </div>
           <div v-if="recordsLoading" class="status status-tip">提交记录加载中...</div>
@@ -361,7 +341,7 @@ watch(() => pagination.value.pageSize, () => {
               <div>
                 <div class="section-tag">Ranking</div>
                 <div class="panel-title">高风险人员排行</div>
-                <div class="panel-subtitle">只保留高风险排行，便于快速发现重点跟进对象。</div>
+                <div class="panel-subtitle">只保留高风险作者，方便跟进。</div>
               </div>
             </div>
             <div v-if="authorRanking.length" class="ranking-scroll">
@@ -383,7 +363,7 @@ watch(() => pagination.value.pageSize, () => {
               <div>
                 <div class="section-tag">Snapshot</div>
                 <div class="panel-title">当前概况</div>
-                <div class="panel-subtitle">给你一个简短摘要，适合复制到日报或群里。</div>
+                <div class="panel-subtitle">压缩成一块短摘要。</div>
               </div>
             </div>
             <div class="ranking-list">
