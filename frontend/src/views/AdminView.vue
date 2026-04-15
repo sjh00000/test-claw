@@ -7,8 +7,8 @@ import { getHighRiskRanking, getOverview, getRecords, getRepoKeys } from '../lib
 import { formatTime, riskClass, shortSha, statLabel, summarizeAdvice } from '../lib/format';
 
 const overview = ref({ totalCount: 0, highRiskCount: 0, mediumRiskCount: 0, lowRiskCount: 0, noRiskCount: 0, ignoredCount: 0, pendingCount: 0, todayCount: 0, distinctRepoCount: 0, recentTrend: [] });
-const records = ref({ total: 0, page: 1, pageSize: 20, records: [] });
-const pagination = ref({ page: 1, pageSize: 20 });
+const records = ref({ total: 0, page: 1, pageSize: 10, records: [] });
+const pagination = ref({ page: 1, pageSize: 10 });
 const filters = ref({ keyword: '', reviewResult: '', repoKey: '' });
 const repoKeys = ref([]);
 const authorRanking = ref([]);
@@ -26,7 +26,7 @@ const statCards = computed(() => [
   { key: 'today', label: '今日新增', value: overview.value.todayCount, note: '查看今天新增记录' }
 ]);
 
-const totalPages = computed(() => Math.max(1, Math.ceil((records.value.total || 0) / (records.value.pageSize || pagination.value.pageSize || 20))));
+const totalPages = computed(() => Math.max(1, Math.ceil((records.value.total || 0) / (records.value.pageSize || pagination.value.pageSize || 10))));
 
 const focusRiskTotal = computed(() => Number(overview.value.highRiskCount || 0) + Number(overview.value.mediumRiskCount || 0));
 
@@ -155,7 +155,7 @@ function searchRecords() {
 function resetFilters() {
   filters.value = { keyword: '', reviewResult: '', repoKey: '' };
   activeStatKey.value = '';
-  pagination.value = { page: 1, pageSize: 20 };
+  pagination.value = { page: 1, pageSize: 10 };
   loadRecordData();
 }
 
