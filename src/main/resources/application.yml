@@ -1,14 +1,55 @@
 spring:
   application:
-    name: openclaw-review-admin
+    name: keyframe-video-studio
   datasource:
+    # SQLite 本地数据库文件，项目启动时自动创建 data/keyframe-video-studio.db。
+    url: jdbc:sqlite:data/keyframe-video-studio.db
     driver-class-name: org.sqlite.JDBC
-    url: jdbc:sqlite:${REVIEW_ADMIN_DB_PATH:C:\Users\LSYM005169\.openclaw\skills\openclaw-commit-review\runtime\db\review-log.sqlite}
+  ai:
+    dashscope:
+      # Spring AI Alibaba 自动配置要求必须存在 api-key；本项目实际厂商调用走自定义 client。
+      api-key: ${DASHSCOPE_API_KEY:local-dev-placeholder}
+      agent:
+        # Agent 自动配置也会读取独立 key，本地用占位值避免阻断启动。
+        api-key: ${DASHSCOPE_AGENT_API_KEY:${DASHSCOPE_API_KEY:local-dev-placeholder}}
 
 server:
+  # 后端 API 端口，前端 Vite 通过 /api 代理到这里。
   port: 8080
 
-mybatis-plus:
-  mapper-locations: classpath*:/mapper/**/*.xml
-  configuration:
-    map-underscore-to-camel-case: true
+generation:
+  image-provider:
+    # gpt-image2 厂商网关域名，默认使用 Euzhi API。
+    base-url: ${GPT_IMAGE2_BASE_URL:https://api.euzhi.com}
+    # gpt-image2 厂商密钥，禁止写死在配置文件。
+    api-key: ${GPT_IMAGE2_API_KEY:${EUZHI_API_KEY:}}
+    # 图片生成模型名称。
+    model: ${GPT_IMAGE2_MODEL:gpt-image-2}
+    # 图片编辑接口路径，对应 image2 示例中的 /v1/images/edits。
+    edit-endpoint: ${GPT_IMAGE2_EDIT_ENDPOINT:/v1/images/edits}
+    # 图片生成接口路径，用于先生成主体/角色参考图。
+    generation-endpoint: ${GPT_IMAGE2_GENERATION_ENDPOINT:/v1/images/generations}
+    # image2 输出尺寸。
+    size: ${GPT_IMAGE2_SIZE:1024x1024}
+    # image2 输出质量。
+    quality: ${GPT_IMAGE2_QUALITY:medium}
+    # b64_json 输出模式：url=保存为图片URL；base64=直接返回 data:image/png;base64。
+    b64-json-output-mode: ${GPT_IMAGE2_B64_JSON_OUTPUT_MODE:base64}
+  seedance:
+    # Seedance 文档中的 BASE_URL，未配置时启用 mock 视频任务。
+    base-url: ${SEEDANCE_BASE_URL:https://www.moyu.info}
+    # Seedance Bearer Token，禁止写死在配置文件。
+    api-key: ${SEEDANCE_API_KEY:}
+    # 标准视频生成模型。
+    model: ${SEEDANCE_MODEL:doubao-seedance-2-0-260128}
+    # 快速视频生成模型。
+    fast-model: ${SEEDANCE_FAST_MODEL:doubao-seedance-2-0-fast-260128}
+    # 后端建议轮询间隔，保留给后续前端动态读取。
+    poll-interval-seconds: ${SEEDANCE_POLL_INTERVAL_SECONDS:15}
+  assets:
+    # b64_json 图片落盘目录。
+    image-dir: ${GENERATED_IMAGE_DIR:generated-assets/images}
+    # b64_json 图片对外访问前缀。
+    image-url-prefix: ${GENERATED_IMAGE_URL_PREFIX:/assets/images}
+    # 图片公开访问基础地址；为空时按当前请求自动拼接。
+    public-base-url: ${PUBLIC_BASE_URL:}

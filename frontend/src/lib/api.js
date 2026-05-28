@@ -1,23 +1,51 @@
-export async function fetchJson(url) {
-  const response = await fetch(url);
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.message || '请求失败');
+const BASE_URL = '/api/generation-sessions'
+
+async function request(path, options = {}) {
+  // 后端统一返回 R<T>，这里集中拆包和错误处理，页面层只接收 data。
+  const response = await fetch(`${BASE_URL}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    },
+    ...options
+  })
+
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || payload?.code !== 200) {
+    throw new Error(payload?.msg || '请求失败')
   }
-  return payload;
+  return payload.data
 }
 
-export const getOverview = () => fetchJson('/api/review-admin/overview');
-export const getRepoKeys = () => fetchJson('/api/review-admin/repo-keys');
-export const getHighRiskRanking = (limit = 8) => fetchJson(`/api/review-admin/rankings/unqualified-authors?limit=${limit}`);
-export const getRecordDetail = (id) => fetchJson(`/api/review-admin/records/${id}`);
+export function createSession(data) {
+  return request('', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
+}
 
-export function getRecords(params = {}) {
-  const query = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      query.set(key, String(value));
-    }
-  });
-  return fetchJson(`/api/review-admin/records?${query.toString()}`);
+export function generateReferenceImage(data) {
+  return request('/reference-images', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
+}
+
+export function generateKeyframes(sessionId) {
+  return request(`/${sessionId}/keyframes`, { method: 'POST' })
+}
+
+export function submitVideo(sessionId) {
+  return request(`/${sessionId}/video`, { method: 'POST' })
+}
+
+export function submitVideoFromKeyframes(data) {
+  return request('/video', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
+}
+
+export function refreshVideo(sessionId) {
+  return request(`/${sessionId}/video/status`, { method: 'POST' })
 }

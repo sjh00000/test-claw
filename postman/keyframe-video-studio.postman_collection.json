@@ -1,0 +1,80 @@
+{
+  "info": {
+    "name": "Keyframe Video Studio",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "sessionId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "生成主体参考图",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/generation-sessions/reference-images",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"prompt\": \"一位赛博朋克风格冒险者，银色短发，黑色机能外套，电影级角色设定图\"\n}"
+        }
+      }
+    },
+    {
+      "name": "创建会话",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/generation-sessions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"videoPrompt\": \"一位冒险者穿过雨后的霓虹街道，镜头从远景推进到近景，氛围电影感\",\n  \"referenceImageUrls\": [\"https://placehold.co/1024x1024/png?text=main+character\"],\n  \"keyframeCount\": 3,\n  \"duration\": 5,\n  \"resolution\": \"720p\",\n  \"ratio\": \"16:9\",\n  \"generateAudio\": true,\n  \"fastMode\": false,\n  \"keyframes\": [\n    {\n      \"prompt\": \"雨后的霓虹街道远景，地面积水反射灯光，冒险者站在画面中央\"\n    },\n    {\n      \"prompt\": \"镜头推近，冒险者抬头看向远方，蓝绿色霓虹照亮侧脸\"\n    },\n    {\n      \"prompt\": \"近景定格，冒险者坚定地向镜头外走去，背景光晕柔和\"\n    }\n  ]\n}"
+        }
+      }
+    },
+    {
+      "name": "生成关键帧",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/generation-sessions/{{sessionId}}/keyframes"
+      }
+    },
+    {
+      "name": "提交视频",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/generation-sessions/{{sessionId}}/video"
+      }
+    },
+    {
+      "name": "刷新视频状态",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/generation-sessions/{{sessionId}}/video/status"
+      }
+    },
+    {
+      "name": "查询会话",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/generation-sessions/{{sessionId}}"
+      }
+    }
+  ]
+}
