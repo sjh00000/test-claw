@@ -14,5 +14,7 @@ public enum GenerationStatusEnum {
     // 视频生成成功。
     SUCCEEDED,
     // 任一关键步骤失败。
-    FAILED
+    FAILED,
+    // 用户主动取消当前生成任务。
+    CANCELLED
 }

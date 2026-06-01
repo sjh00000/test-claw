@@ -35,6 +35,8 @@ generation:
     quality: ${GPT_IMAGE2_QUALITY:medium}
     # b64_json 输出模式：url=保存为图片URL；base64=直接返回 data:image/png;base64。
     b64-json-output-mode: ${GPT_IMAGE2_B64_JSON_OUTPUT_MODE:base64}
+    # image-2 单次调用超时时间，超过后该帧可重新生成。
+    request-timeout-seconds: ${GPT_IMAGE2_REQUEST_TIMEOUT_SECONDS:600}
   seedance:
     # Seedance 文档中的 BASE_URL，未配置时启用 mock 视频任务。
     base-url: ${SEEDANCE_BASE_URL:https://www.moyu.info}

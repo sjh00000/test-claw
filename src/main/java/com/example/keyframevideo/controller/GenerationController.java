@@ -2,13 +2,13 @@ package com.example.keyframevideo.controller;
 
 import com.example.keyframevideo.bo.CreateSessionBO;
 import com.example.keyframevideo.bo.CreateVideoFromKeyframesBO;
+import com.example.keyframevideo.bo.GenerateKeyframeBO;
 import com.example.keyframevideo.bo.GenerateReferenceImageBO;
 import com.example.keyframevideo.common.R;
 import com.example.keyframevideo.facade.GenerationWorkflowFacade;
 import com.example.keyframevideo.vo.GenerationSessionVO;
 import com.example.keyframevideo.vo.ReferenceImageVO;
 import jakarta.validation.Valid;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,16 +37,13 @@ public class GenerationController {
         return R.ok(generationWorkflowFacade.createSession(request));
     }
 
-    @PostMapping("/{sessionId}/keyframes")
-    public R<GenerationSessionVO> generateKeyframes(@PathVariable String sessionId) {
-        // 逐张调用 gpt-image2 生成关键帧图。
-        return R.ok(generationWorkflowFacade.generateKeyframes(sessionId));
-    }
-
-    @PostMapping("/{sessionId}/video")
-    public R<GenerationSessionVO> submitVideo(@PathVariable String sessionId) {
-        // 把已生成的关键帧提交给 Seedance 生成视频。
-        return R.ok(generationWorkflowFacade.submitVideo(sessionId));
+    @PostMapping("/{sessionId}/keyframes/{frameIndex}")
+    public R<GenerationSessionVO> generateKeyframe(
+            @PathVariable String sessionId,
+            @PathVariable int frameIndex,
+            @Valid @RequestBody GenerateKeyframeBO request) {
+        // 单独生成某一帧，使用前端最新描述覆盖会话旧提示词，适合修改描述后重试当前帧。
+        return R.ok(generationWorkflowFacade.generateKeyframe(sessionId, frameIndex, request));
     }
 
     @PostMapping("/video")
@@ -61,8 +58,9 @@ public class GenerationController {
         return R.ok(generationWorkflowFacade.refreshVideo(sessionId));
     }
 
-    @GetMapping("/{sessionId}")
-    public R<GenerationSessionVO> getSession(@PathVariable String sessionId) {
-        return R.ok(generationWorkflowFacade.getSession(sessionId));
+    @PostMapping("/{sessionId}/video/cancel")
+    public R<GenerationSessionVO> cancelVideo(@PathVariable String sessionId) {
+        // 用户主动取消 Seedance 视频任务；仅允许提交中或生成中状态取消。
+        return R.ok(generationWorkflowFacade.cancelVideo(sessionId));
     }
 }

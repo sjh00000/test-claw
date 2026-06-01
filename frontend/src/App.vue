@@ -1,6 +1,6 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { createSession, generateKeyframes, generateReferenceImage, refreshVideo, submitVideoFromKeyframes } from './lib/api'
+import { cancelVideo, createSession, generateKeyframe, generateReferenceImage, refreshVideo, submitVideoFromKeyframes } from './lib/api'
 
 const statusText = {
   DRAFT: '待生成',
@@ -9,7 +9,8 @@ const statusText = {
   SUBMITTING_VIDEO: '提交视频',
   VIDEO_RUNNING: '视频生成中',
   SUCCEEDED: '已完成',
-  FAILED: '失败'
+  FAILED: '失败',
+  CANCELLED: '已取消'
 }
 
 const MIN_KEYFRAME_COUNT = 1
@@ -36,9 +37,12 @@ const keyframeImages = ref([])
 const selectedKeyframeIds = ref([])
 const session = ref(null)
 const referenceLoading = ref(false)
-const keyframeLoading = ref(false)
+const generatingFrameIndexes = ref([])
 const videoLoading = ref(false)
 const errorMessage = ref('')
+let referenceRequestSeq = 0
+const frameRequestSeqMap = new Map()
+let videoRequestSeq = 0
 let pollTimer = null
 
 function createBlankKeyframe(index) {
@@ -49,6 +53,7 @@ function createBlankKeyframe(index) {
 
 function syncKeyframes() {
   const nextCount = normalizeKeyframeCount(form.keyframeCount)
+  const previousCount = form.keyframes.length
   if (form.keyframeCount !== nextCount) {
     form.keyframeCount = nextCount
   }
@@ -58,6 +63,10 @@ function syncKeyframes() {
   }
   while (form.keyframes.length > nextCount) {
     form.keyframes.pop()
+  }
+  if (session.value?.id && previousCount !== nextCount && session.value.status !== 'VIDEO_RUNNING' && session.value.status !== 'SUBMITTING_VIDEO') {
+    // 关键帧数量改变后旧会话的帧列表已不可信，后续单帧生成需要重新创建会话。
+    session.value = null
   }
 }
 
@@ -87,12 +96,45 @@ const selectedKeyframeImages = computed(() => {
   return keyframeImages.value.filter((item) => selectedKeyframeIds.value.includes(item.id))
 })
 
-const canGenerateKeyframes = computed(() => {
-  return selectedReferenceImages.value.length > 0 && form.keyframes.every((item) => item.prompt.trim())
+const isVideoRunning = computed(() => {
+  return videoLoading.value || ['SUBMITTING_VIDEO', 'VIDEO_RUNNING'].includes(session.value?.status)
+})
+
+function canGenerateSingleKeyframe(index) {
+  return selectedReferenceImages.value.length > 0 && Boolean(form.keyframes[index - 1]?.prompt.trim())
+}
+
+const videoValidationMessage = computed(() => {
+  if (!form.videoPrompt.trim()) {
+    return '视频整体描述不能为空'
+  }
+  if (selectedReferenceImages.value.length === 0) {
+    return '至少选择 1 张参考图'
+  }
+  if (selectedReferenceImages.value.some((item) => !item.title.trim())) {
+    return '已选参考图名称不能为空'
+  }
+  if (selectedKeyframeImages.value.length === 0) {
+    return '至少选择 1 张关键帧图'
+  }
+  if (selectedKeyframeImages.value.length > MAX_KEYFRAME_COUNT) {
+    return '关键帧图最多支持 50 张'
+  }
+  const duration = Number(form.duration)
+  if (!Number.isInteger(duration) || duration < 4 || duration > 15) {
+    return '视频时长需为 4 到 15 秒之间的整数'
+  }
+  if (!['480p', '720p'].includes(form.resolution)) {
+    return '视频清晰度仅支持 480p 或 720p'
+  }
+  if (!['16:9', '4:3', '1:1', '3:4', '9:16', '21:9', 'adaptive'].includes(form.ratio)) {
+    return '视频比例仅支持 16:9、4:3、1:1、3:4、9:16、21:9 或 adaptive'
+  }
+  return ''
 })
 
 const canGenerateVideo = computed(() => {
-  return form.videoPrompt.trim() && selectedKeyframeImages.value.length > 0
+  return !videoValidationMessage.value && !isVideoRunning.value
 })
 
 const progress = computed(() => {
@@ -185,6 +227,21 @@ function readImageFile(file) {
   })
 }
 
+function describeImageList(title, images) {
+  if (!images.length) {
+    return `${title}：无`
+  }
+  return `${title}：\n${images.map((image, index) => {
+    const name = image.title?.trim() || `${title}${index + 1}`
+    return `${index + 1}. ${name}`
+  }).join('\n')}`
+}
+
+function confirmGeneration(title, lines) {
+  // 生成前把本次引用图标签集中展示，避免用户误选旧图就提交厂商。
+  return window.confirm(`${title}\n\n${lines.filter(Boolean).join('\n\n')}\n\n确认继续生成吗？`)
+}
+
 async function handleReferenceUpload(event) {
   const files = Array.from(event.target.files || [])
   for (const file of files) {
@@ -207,89 +264,216 @@ async function createReferenceImage() {
   if (!form.referencePrompt.trim() || referenceLoading.value) {
     return
   }
+  if (!confirmGeneration('即将生成参考图', [
+    `实际提示词：${form.referencePrompt.trim()}`,
+    '本次不引用已有图片，只根据上述参考图描述生成。'
+  ])) {
+    return
+  }
+  const requestSeq = ++referenceRequestSeq
+  const referenceNameSnapshot = form.referenceName.trim() || 'image-2 参考图'
+  const referencePromptSnapshot = form.referencePrompt.trim()
+  const imageSizeSnapshot = form.imageSize
+  const imageQualitySnapshot = form.imageQuality
   referenceLoading.value = true
   errorMessage.value = ''
   try {
     const result = await generateReferenceImage({
-      prompt: form.referencePrompt.trim(),
-      imageSize: form.imageSize,
-      imageQuality: form.imageQuality
+      prompt: referencePromptSnapshot,
+      imageSize: imageSizeSnapshot,
+      imageQuality: imageQualitySnapshot
     })
-    addReferenceImage(result.imageUrl, 'generated', form.referenceName.trim() || 'image-2 参考图')
+    if (requestSeq === referenceRequestSeq) {
+      addReferenceImage(result.imageUrl, 'generated', referenceNameSnapshot)
+    }
   } catch (error) {
-    errorMessage.value = error.message
+    if (requestSeq === referenceRequestSeq) {
+      errorMessage.value = error.message
+    }
   } finally {
-    referenceLoading.value = false
+    if (requestSeq === referenceRequestSeq) {
+      referenceLoading.value = false
+    }
   }
 }
 
-async function createKeyframeImages() {
-  if (!canGenerateKeyframes.value || keyframeLoading.value) {
+async function ensureSession() {
+  if (session.value?.id) {
+    return session.value
+  }
+  session.value = await createSession({
+    videoPrompt: form.videoPrompt.trim() || '关键帧生成',
+    referenceImageUrls: selectedReferenceImages.value.map((item) => item.url),
+    referenceImages: selectedReferenceImages.value.map((item) => ({
+      imageUrl: item.url,
+      name: item.title
+    })),
+    keyframeCount: Number(form.keyframeCount),
+    imageSize: form.imageSize,
+    imageQuality: form.imageQuality,
+    duration: Number(form.duration),
+    resolution: form.resolution,
+    ratio: form.ratio,
+    generateAudio: form.generateAudio,
+    fastMode: form.fastMode,
+    keyframes: form.keyframes.map((item) => ({ prompt: item.prompt.trim() }))
+  })
+  return session.value
+}
+
+function syncGeneratedKeyframeImages(nextSession) {
+  for (const keyframe of nextSession.keyframes || []) {
+    if (!keyframe.generatedImageUrl) {
+      continue
+    }
+    const title = `关键帧 ${keyframe.index}`
+    const existing = keyframeImages.value.find((item) => item.title === title && item.source === 'generated')
+    if (existing) {
+      existing.url = keyframe.generatedImageUrl
+    } else {
+      addKeyframeImage(keyframe.generatedImageUrl, 'generated', title)
+    }
+  }
+}
+
+function isFrameGenerating(index) {
+  return generatingFrameIndexes.value.includes(index)
+}
+
+function nextFrameRequestSeq(index) {
+  const nextSeq = (frameRequestSeqMap.get(index) || 0) + 1
+  frameRequestSeqMap.set(index, nextSeq)
+  return nextSeq
+}
+
+function isLatestFrameRequest(index, requestSeq) {
+  return frameRequestSeqMap.get(index) === requestSeq
+}
+
+async function createSingleKeyframe(index) {
+  if (!canGenerateSingleKeyframe(index) || isFrameGenerating(index) || isVideoRunning.value) {
     return
   }
-  clearPolling()
-  keyframeLoading.value = true
+  if (!confirmGeneration(`即将生成关键帧 ${index}`, [
+    `关键帧 ${index} 画面描述：${form.keyframes[index - 1].prompt.trim()}`,
+    describeImageList('本次引用参考图', selectedReferenceImages.value)
+  ])) {
+    return
+  }
+  const requestSeq = nextFrameRequestSeq(index)
+  const requestId = `${Date.now()}-${index}-${requestSeq}-${Math.random().toString(16).slice(2)}`
+  const keyframePromptSnapshot = form.keyframes[index - 1].prompt.trim()
+  const imageSizeSnapshot = form.imageSize
+  const imageQualitySnapshot = form.imageQuality
+  const referenceImagesSnapshot = selectedReferenceImages.value.map((item) => ({
+    imageUrl: item.url,
+    name: item.title
+  }))
   errorMessage.value = ''
-  keyframeImages.value = []
-  selectedKeyframeIds.value = []
-
+  generatingFrameIndexes.value.push(index)
   try {
-    session.value = await createSession({
-      videoPrompt: form.videoPrompt.trim() || '关键帧生成',
-      referenceImageUrls: selectedReferenceImages.value.map((item) => item.url),
-      referenceImages: selectedReferenceImages.value.map((item) => ({
-        imageUrl: item.url,
-        name: item.title
-      })),
-      keyframeCount: Number(form.keyframeCount),
-      imageSize: form.imageSize,
-      imageQuality: form.imageQuality,
-      duration: Number(form.duration),
-      resolution: form.resolution,
-      ratio: form.ratio,
-      generateAudio: form.generateAudio,
-      fastMode: form.fastMode,
-      keyframes: form.keyframes.map((item) => ({ prompt: item.prompt.trim() }))
+    await ensureSession()
+    const nextSession = await generateKeyframe(session.value.id, index, {
+      prompt: keyframePromptSnapshot,
+      referenceImages: referenceImagesSnapshot,
+      imageSize: imageSizeSnapshot,
+      imageQuality: imageQualitySnapshot,
+      requestId
     })
-    session.value = await generateKeyframes(session.value.id)
-    if (session.value.status !== 'KEYFRAMES_READY') {
-      throw new Error(session.value.errorMessage || '关键帧生成未完成')
-    }
-    for (const keyframe of session.value.keyframes || []) {
-      if (keyframe.generatedImageUrl) {
-        addKeyframeImage(keyframe.generatedImageUrl, 'generated', `关键帧 ${keyframe.index}`)
-      }
+    if (isLatestFrameRequest(index, requestSeq)) {
+      session.value = nextSession
+      syncGeneratedKeyframeImages(session.value)
     }
   } catch (error) {
-    errorMessage.value = error.message
+    if (isLatestFrameRequest(index, requestSeq)) {
+      errorMessage.value = error.message
+    }
   } finally {
-    keyframeLoading.value = false
+    if (isLatestFrameRequest(index, requestSeq)) {
+      generatingFrameIndexes.value = generatingFrameIndexes.value.filter((item) => item !== index)
+    }
   }
 }
 
 async function createVideo() {
-  if (!canGenerateVideo.value || videoLoading.value) {
+  if (!canGenerateVideo.value || isVideoRunning.value) {
+    if (videoValidationMessage.value) {
+      errorMessage.value = videoValidationMessage.value
+    }
     return
   }
+  if (!confirmGeneration('即将生成视频', [
+    `视频整体描述：${form.videoPrompt.trim()}`,
+    describeImageList('本次引用参考图', selectedReferenceImages.value),
+    describeImageList('本次引用关键帧图', selectedKeyframeImages.value)
+  ])) {
+    return
+  }
+  const requestSeq = ++videoRequestSeq
   videoLoading.value = true
   errorMessage.value = ''
   clearPolling()
 
   try {
-    session.value = await submitVideoFromKeyframes({
+    const nextSession = await submitVideoFromKeyframes({
       videoPrompt: form.videoPrompt.trim(),
-      keyframeImageUrls: selectedKeyframeImages.value.map((item) => item.url),
+      referenceImages: selectedReferenceImages.value.map((item) => ({
+        imageUrl: item.url,
+        name: item.title
+      })),
+      keyframeImages: selectedKeyframeImages.value.map((item, index) => ({
+        imageUrl: item.url,
+        name: `关键帧 ${index + 1}`
+      })),
       duration: Number(form.duration),
       resolution: form.resolution,
       ratio: form.ratio,
       generateAudio: form.generateAudio,
       fastMode: form.fastMode
     })
-    startPolling()
+    if (requestSeq === videoRequestSeq) {
+      session.value = nextSession
+      startPolling()
+    }
+  } catch (error) {
+    if (requestSeq === videoRequestSeq) {
+      errorMessage.value = error.message
+    }
+  } finally {
+    if (requestSeq === videoRequestSeq) {
+      videoLoading.value = false
+    }
+  }
+}
+
+function cancelReferenceGeneration() {
+  // image-2 同步请求已经发出时无法可靠通知厂商取消；这里取消前端等待并忽略后续返回结果。
+  referenceRequestSeq += 1
+  referenceLoading.value = false
+  errorMessage.value = '已取消本次参考图生成等待'
+}
+
+function cancelKeyframeGeneration(index) {
+  // 单帧 image-2 请求无法可靠中断上游；这里取消前端等待并忽略旧请求返回，用户可立即重写描述后再生成。
+  nextFrameRequestSeq(index)
+  generatingFrameIndexes.value = generatingFrameIndexes.value.filter((item) => item !== index)
+  errorMessage.value = `已取消关键帧 ${index} 生成等待`
+}
+
+async function cancelVideoGeneration() {
+  if (!session.value?.id || !isVideoRunning.value) {
+    return
+  }
+  if (!window.confirm('确认取消当前视频生成任务吗？已提交到 Seedance 的任务会调用厂商取消接口。')) {
+    return
+  }
+  videoRequestSeq += 1
+  videoLoading.value = false
+  clearPolling()
+  try {
+    session.value = await cancelVideo(session.value.id)
   } catch (error) {
     errorMessage.value = error.message
-  } finally {
-    videoLoading.value = false
   }
 }
 
@@ -300,7 +484,7 @@ function startPolling() {
   pollTimer = window.setInterval(async () => {
     try {
       session.value = await refreshVideo(session.value.id)
-      if (['SUCCEEDED', 'FAILED'].includes(session.value.status)) {
+      if (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(session.value.status)) {
         clearPolling()
       }
     } catch (error) {
@@ -386,6 +570,9 @@ function clearPolling() {
               >
                 {{ referenceLoading ? '生成中' : '用 image-2 生成参考图' }}
               </button>
+              <button v-if="referenceLoading" class="secondary-action" type="button" @click="cancelReferenceGeneration">
+                取消生成
+              </button>
             </div>
           </div>
 
@@ -393,7 +580,10 @@ function clearPolling() {
             <figure v-for="image in referenceImages" :key="image.id" :class="{ selected: selectedReferenceIds.includes(image.id) }">
               <img :src="image.url" :alt="image.title" />
               <figcaption>
-                <strong>{{ image.title }}</strong>
+                <label class="field image-meta-field">
+                  参考图名称
+                  <input v-model.trim="image.title" type="text" placeholder="例如 沈砚参考图" />
+                </label>
                 <span>{{ image.source === 'upload' ? '用户上传' : '模型生成' }}</span>
               </figcaption>
               <div class="image-actions">
@@ -433,7 +623,17 @@ function clearPolling() {
             <article v-for="(item, index) in form.keyframes" :key="index" class="keyframe-editor">
               <div class="keyframe-title">
                 <strong>关键帧 {{ index + 1 }}</strong>
-                <span>使用已选参考图</span>
+                <button
+                  v-if="!isFrameGenerating(index + 1)"
+                  type="button"
+                  :disabled="!canGenerateSingleKeyframe(index + 1) || isFrameGenerating(index + 1) || isVideoRunning"
+                  @click="createSingleKeyframe(index + 1)"
+                >
+                  生成本帧
+                </button>
+                <button v-else type="button" @click="cancelKeyframeGeneration(index + 1)">
+                  取消生成
+                </button>
               </div>
               <label class="field">
                 画面描述
@@ -443,9 +643,6 @@ function clearPolling() {
           </div>
 
           <div class="toolbar-row">
-            <button class="primary-action" type="button" :disabled="!canGenerateKeyframes || keyframeLoading" @click="createKeyframeImages">
-              {{ keyframeLoading ? '生成中' : '生成关键帧图' }}
-            </button>
             <div class="upload-box compact">
               <input id="keyframeUpload" type="file" accept="image/*" multiple @change="handleKeyframeUpload" />
               <label class="upload-trigger" for="keyframeUpload">上传关键帧图</label>
@@ -456,7 +653,7 @@ function clearPolling() {
             <figure v-for="image in keyframeImages" :key="image.id" :class="{ selected: selectedKeyframeIds.includes(image.id) }">
               <img :src="image.url" :alt="image.title" />
               <figcaption>
-                <strong>{{ image.title }}</strong>
+                <strong>{{ `关键帧 ${selectedKeyframeIds.indexOf(image.id) >= 0 ? selectedKeyframeIds.indexOf(image.id) + 1 : keyframeImages.indexOf(image) + 1}` }}</strong>
                 <span>{{ image.source === 'upload' ? '用户上传' : '模型生成' }}</span>
               </figcaption>
               <div class="image-actions">
@@ -492,7 +689,7 @@ function clearPolling() {
             <div class="video-settings">
               <label class="field">
                 时长（秒）
-                <input v-model.number="form.duration" type="number" min="-1" max="15" />
+                <input v-model.number="form.duration" type="number" min="4" max="15" />
               </label>
               <label class="field">
                 清晰度
@@ -520,9 +717,15 @@ function clearPolling() {
             </div>
           </div>
 
-          <button class="primary-action" type="button" :disabled="!canGenerateVideo || videoLoading" @click="createVideo">
-            {{ videoLoading ? '提交中' : '生成视频' }}
+          <button class="primary-action" type="button" :disabled="!canGenerateVideo || isVideoRunning" @click="createVideo">
+            {{ isVideoRunning ? '生成中' : '生成视频' }}
           </button>
+          <button v-if="isVideoRunning" class="secondary-action" type="button" @click="cancelVideoGeneration">
+            取消视频生成
+          </button>
+          <p v-if="videoValidationMessage" class="hint-message">
+            {{ videoValidationMessage }}
+          </p>
 
           <div v-if="session" class="progress-card">
             <div class="progress-header">
@@ -538,6 +741,9 @@ function clearPolling() {
           </div>
 
           <video v-if="session?.videoUrl" class="video-preview" :src="session.videoUrl" controls />
+          <p v-else-if="session?.status === 'SUCCEEDED'" class="hint-message">
+            视频已生成成功，但暂未解析到下载地址，请查看后端 Seedance 查询响应日志。
+          </p>
           <button
             v-if="session?.videoUrl"
             class="download-link"

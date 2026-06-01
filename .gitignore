@@ -1,3 +1,5 @@
 ﻿target/
 .claw-review/output/
 .claw-review/reminders/
+.idea
+data

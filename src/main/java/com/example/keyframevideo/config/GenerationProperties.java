@@ -29,6 +29,8 @@ public class GenerationProperties {
         private String quality = "medium";
         // b64_json 输出模式：url=落盘后返回图片 URL；base64=直接返回 data:image/png;base64。
         private String b64JsonOutputMode = "url";
+        // image-2 单次调用超时时间，单位秒，超过后允许前端重新生成对应帧。
+        private int requestTimeoutSeconds = 300;
     }
 
     @Data

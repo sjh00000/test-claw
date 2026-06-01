@@ -171,6 +171,7 @@ h2 {
 }
 
 .primary-action,
+.secondary-action,
 .download-link,
 .upload-box .upload-trigger,
 .image-actions button {
@@ -189,6 +190,13 @@ h2 {
   padding: 0 18px;
   color: #fff;
   background: #16736f;
+}
+
+.secondary-action {
+  border: 1px solid #bf4f43;
+  padding: 0 18px;
+  color: #9b352b;
+  background: #fff4f2;
 }
 
 .upload-box {
@@ -242,14 +250,21 @@ h2 {
 
 .keyframe-title {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
 }
 
-.keyframe-title span {
-  color: #60717d;
+.keyframe-title button {
+  min-height: 32px;
+  border: 1px solid #16736f;
+  border-radius: 6px;
+  padding: 0 12px;
+  color: #135f5b;
+  background: #edf8f6;
   font-size: 13px;
+  font-weight: 800;
 }
 
 .toolbar-row {
@@ -292,7 +307,6 @@ figcaption {
   padding: 10px;
 }
 
-figcaption strong,
 figcaption span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -301,6 +315,22 @@ figcaption span {
 
 figcaption span {
   color: #60717d;
+  font-size: 13px;
+}
+
+.image-meta-field {
+  gap: 5px;
+  font-size: 12px;
+}
+
+.image-meta-field input {
+  height: 34px;
+  padding: 0 9px;
+}
+
+.image-meta-field textarea {
+  min-height: 62px;
+  padding: 9px;
   font-size: 13px;
 }
 
@@ -387,6 +417,12 @@ figcaption span {
   background: #fff3f0;
 }
 
+.hint-message {
+  margin: -8px 0 0;
+  color: #60717d;
+  font-size: 13px;
+}
+
 .video-preview {
   width: 100%;
   border-radius: 8px;
@@ -417,6 +453,7 @@ figcaption span {
 
   .toolbar-row,
   .primary-action,
+  .secondary-action,
   .download-link {
     width: 100%;
   }

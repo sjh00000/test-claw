@@ -1,28 +1,40 @@
 package com.example.keyframevideo.client;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.keyframevideo.config.GenerationProperties;
 import com.example.keyframevideo.domain.KeyframeResult;
 import com.example.keyframevideo.exception.BusinessException;
 import com.example.keyframevideo.service.GeneratedImageStorageService;
+import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StreamUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 
 @Slf4j
 @Component
@@ -32,6 +44,11 @@ public class ImageProviderClient {
     private final RestClient.Builder restClientBuilder;
     private final ObjectMapper objectMapper;
     private final GeneratedImageStorageService generatedImageStorageService;
+    private final ScheduledExecutorService imageCallMonitor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "image-2-call-monitor");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public ImageProviderClient(
             GenerationProperties properties,
@@ -56,40 +73,46 @@ public class ImageProviderClient {
             throw new BusinessException("gpt-image2 图片编辑至少需要 1 张参考图");
         }
 
-        Map<?, ?> response;
+        String imageUrl;
+        Instant startedAt = Instant.now();
+        ScheduledFuture<?> monitorFuture = startImageCallMonitor("gpt-image2 编辑接口", keyframe.getIndex(), startedAt);
         try {
-            MultipartBodyBuilder bodyBuilder = buildMultipartBody(provider, keyframe);
-            log.info("请求 image-2 编辑接口，endpoint={}, model={}, size={}, quality={}, frameIndex={}, prompt={}, referenceImageCount={}, referenceImages={}",
+            String finalPrompt = buildPromptWithReferenceNames(keyframe);
+            MultipartBodyBuilder bodyBuilder = buildMultipartBody(provider, keyframe, finalPrompt);
+            log.info("请求 image-2 编辑接口，endpoint={}, model={}, size={}, quality={}, frameIndex={}, actualPrompt={}, referenceImageCount={}, referenceImages={}",
                     provider.getEditEndpoint(), provider.getModel(), resolveSize(keyframe), resolveQuality(keyframe),
-                    keyframe.getIndex(), keyframe.getPrompt(), keyframe.getReferenceImages().size(),
+                    keyframe.getIndex(), finalPrompt, keyframe.getReferenceImages().size(),
                     summarizeReferenceImages(keyframe));
-            String rawResponse = restClientBuilder
+            imageUrl = restClientBuilder
                     .baseUrl(provider.getBaseUrl())
+                    .requestFactory(createImageRequestFactory())
                     .build()
                     .post()
                     .uri(provider.getEditEndpoint())
                     .header("Authorization", "Bearer " + provider.getApiKey())
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(bodyBuilder.build())
-                    .retrieve()
-                    .body(String.class);
-            log.info("【OVER】");
-            response = parseImageResponse(rawResponse, "gpt-image2 编辑接口", keyframe.getIndex());
+                    .exchange((request, clientResponse) -> parseImageResponse(clientResponse, "gpt-image2 编辑接口", keyframe.getIndex()));
         } catch (RestClientResponseException ex) {
             log.warn("gpt-image2 调用失败，frameIndex={}, httpStatus={}, responseBody={}",
                     keyframe.getIndex(), ex.getStatusCode(), sanitizeRawResponseForLog(ex.getResponseBodyAsString()));
             throw new BusinessException("gpt-image2 调用失败", ex);
+        } catch (ResourceAccessException ex) {
+            log.warn("gpt-image2 调用超时或网络不可达，frameIndex={}, timeoutSeconds={}, reason={}",
+                    keyframe.getIndex(), provider.getRequestTimeoutSeconds(), ex.getMessage());
+            throw new BusinessException("image-2 调用超过 " + provider.getRequestTimeoutSeconds() + " 秒，请重新生成该帧", ex);
         } catch (Exception ex) {
             log.warn("gpt-image2 调用失败，frameIndex={}, reason={}", keyframe.getIndex(), ex.getMessage());
             throw new BusinessException("gpt-image2 调用失败", ex);
+        } finally {
+            stopImageCallMonitor(monitorFuture);
         }
 
-        String imageUrl = extractImageUrl(response);
         if (!StringUtils.hasText(imageUrl)) {
             log.warn("gpt-image2 响应缺少图片地址，frameIndex={}", keyframe.getIndex());
             throw new BusinessException("gpt-image2 响应中没有可用图片地址");
         }
-        log.info("gpt-image2 调用成功，frameIndex={}", keyframe.getIndex());
+        log.info("gpt-image2 调用成功，frameIndex={}, elapsedSeconds={}", keyframe.getIndex(), elapsedSeconds(startedAt));
         return imageUrl;
     }
 
@@ -108,44 +131,65 @@ public class ImageProviderClient {
         payload.put("quality", resolveQuality(imageQuality));
         payload.put("n", 1);
 
-        Map<?, ?> response;
+        String imageUrl;
+        Instant startedAt = Instant.now();
+        ScheduledFuture<?> monitorFuture = startImageCallMonitor("image-2 生成接口", null, startedAt);
         try {
-            log.info("请求 image-2 生成接口，endpoint={}, model={}, size={}, quality={}, prompt={}",
+            log.info("请求 image-2 生成接口，endpoint={}, model={}, size={}, quality={}, actualPrompt={}",
                     provider.getGenerationEndpoint(), provider.getModel(), resolveSize(imageSize), resolveQuality(imageQuality), prompt);
-            String rawResponse = restClientBuilder
+            imageUrl = restClientBuilder
                     .baseUrl(provider.getBaseUrl())
+                    .requestFactory(createImageRequestFactory())
                     .build()
                     .post()
                     .uri(provider.getGenerationEndpoint())
                     .header("Authorization", "Bearer " + provider.getApiKey())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(payload)
-                    .retrieve()
-                    .body(String.class);
-            log.info("【OVER】");
-            response = parseImageResponse(rawResponse, "image-2 生成接口", null);
+                    .exchange((request, clientResponse) -> parseImageResponse(clientResponse, "image-2 生成接口", null));
         } catch (RestClientResponseException ex) {
             log.warn("image-2 主体参考图生成失败，httpStatus={}, responseBody={}",
                     ex.getStatusCode(), sanitizeRawResponseForLog(ex.getResponseBodyAsString()));
             throw new BusinessException("image-2 主体参考图生成失败", ex);
+        } catch (ResourceAccessException ex) {
+            log.warn("image-2 主体参考图生成超时或网络不可达，timeoutSeconds={}, reason={}",
+                    provider.getRequestTimeoutSeconds(), ex.getMessage());
+            throw new BusinessException("image-2 调用超过 " + provider.getRequestTimeoutSeconds() + " 秒，请重新生成参考图", ex);
         } catch (Exception ex) {
             log.warn("image-2 主体参考图生成失败，reason={}", ex.getMessage());
             throw new BusinessException("image-2 主体参考图生成失败", ex);
+        } finally {
+            stopImageCallMonitor(monitorFuture);
         }
 
-        String imageUrl = extractImageUrl(response);
         if (!StringUtils.hasText(imageUrl)) {
             log.warn("image-2 主体参考图响应缺少图片地址");
             throw new BusinessException("image-2 响应中没有可用参考图地址");
         }
-        log.info("image-2 主体参考图生成成功");
+        log.info("image-2 主体参考图生成成功，elapsedSeconds={}", elapsedSeconds(startedAt));
         return imageUrl;
     }
 
-    private MultipartBodyBuilder buildMultipartBody(GenerationProperties.ImageProvider provider, KeyframeResult keyframe) {
+    private ScheduledFuture<?> startImageCallMonitor(String scene, Integer frameIndex, Instant startedAt) {
+        // image-2 是同步长耗时调用；心跳日志用于区分“仍在等待厂商响应”和“请求已经失败但前端未刷新”。
+        return imageCallMonitor.scheduleAtFixedRate(() -> log.info("{} 调用等待中，frameIndex={}, elapsedSeconds={}",
+                scene, frameIndex, elapsedSeconds(startedAt)), 10, 10, TimeUnit.SECONDS);
+    }
+
+    private void stopImageCallMonitor(ScheduledFuture<?> monitorFuture) {
+        if (monitorFuture != null) {
+            monitorFuture.cancel(false);
+        }
+    }
+
+    private long elapsedSeconds(Instant startedAt) {
+        return Duration.between(startedAt, Instant.now()).toSeconds();
+    }
+
+    private MultipartBodyBuilder buildMultipartBody(GenerationProperties.ImageProvider provider, KeyframeResult keyframe, String finalPrompt) {
         MultipartBodyBuilder bodyBuilder = new MultipartBodyBuilder();
         bodyBuilder.part("model", provider.getModel());
-        bodyBuilder.part("prompt", buildPromptWithReferenceNames(keyframe));
+        bodyBuilder.part("prompt", finalPrompt);
         bodyBuilder.part("size", resolveSize(keyframe));
         bodyBuilder.part("quality", resolveQuality(keyframe));
 
@@ -170,6 +214,7 @@ public class ImageProviderClient {
                 return imageBytes;
             }
             byte[] imageBytes = restClientBuilder
+                    .requestFactory(createImageRequestFactory())
                     .build()
                     .get()
                     .uri(URI.create(imageUrl))
@@ -195,67 +240,49 @@ public class ImageProviderClient {
         return Base64.getDecoder().decode(base64.getBytes(StandardCharsets.UTF_8));
     }
 
-    private Map<?, ?> parseImageResponse(String rawResponse, String scene, Integer frameIndex) {
-        if (!StringUtils.hasText(rawResponse)) {
-            log.warn("{} 响应为空，frameIndex={}", scene, frameIndex);
-            throw new BusinessException(scene + "响应为空");
+    private String parseImageResponse(ClientHttpResponse clientResponse, String scene, Integer frameIndex) throws IOException {
+        if (clientResponse.getStatusCode().isError()) {
+            String responseBody = StreamUtils.copyToString(clientResponse.getBody(), StandardCharsets.UTF_8);
+            log.warn("{} 调用失败，frameIndex={}, httpStatus={}, responseBody={}",
+                    scene, frameIndex, clientResponse.getStatusCode(), sanitizeRawResponseForLog(responseBody));
+            throw new BusinessException(scene + "调用失败");
         }
         try {
-            Map<String, Object> response = objectMapper.readValue(rawResponse, new TypeReference<>() {
-            });
-            // 打印脱敏响应摘要，避免完整 base64 或大字段进入日志。
-            log.info("{} 响应解析成功，frameIndex={}, responseSummary={}", scene, frameIndex, sanitizeResponseForLog(response));
-            return response;
+            // image-2 经常返回超长 b64_json；这里只流式扫描图片字段，避免把完整响应构造成 Map。
+            String imageUrl = extractImageUrlFromStream(clientResponse, scene, frameIndex);
+            log.info("{} 响应解析成功，frameIndex={}, hasImage={}", scene, frameIndex, StringUtils.hasText(imageUrl));
+            return imageUrl;
         } catch (Exception ex) {
-            log.warn("{} 响应解析失败，frameIndex={}, rawResponse={}, reason={}",
-                    scene, frameIndex, sanitizeRawResponseForLog(rawResponse), ex.getMessage());
+            log.warn("{} 响应解析失败，frameIndex={}, httpStatus={}, reason={}",
+                    scene, frameIndex, clientResponse.getStatusCode(), ex.getMessage());
             throw new BusinessException(scene + "响应解析失败", ex);
         }
     }
 
-    private String extractImageUrl(Map<?, ?> response) {
-        if (response == null) {
-            return null;
-        }
-        // 兼容 image-2 返回结构：生产优先读取 data[0].url，只有缺少 url 时才回退 b64_json。
-        Object directUrl = response.get("url");
-        if (directUrl instanceof String value) {
-            return value;
-        }
-        Object data = response.get("data");
-        if (data instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof Map<?, ?> item) {
-            return extractImageUrlFromDataItem(item);
-        }
-        Object b64Json = response.get("b64_json");
-        if (b64Json instanceof String value) {
-            return convertB64JsonToImageUrl(value);
-        }
-        Object output = response.get("output");
-        if (output instanceof Map<?, ?> outputMap) {
-            Object images = outputMap.get("images");
-            if (images instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof Map<?, ?> item) {
-                return extractImageUrlFromDataItem(item);
+    private String extractImageUrlFromStream(ClientHttpResponse clientResponse, String scene, Integer frameIndex) throws IOException {
+        try (var parser = objectMapper.getFactory().createParser(clientResponse.getBody())) {
+            while (parser.nextToken() != null) {
+                if (parser.currentToken() != JsonToken.FIELD_NAME) {
+                    continue;
+                }
+                String fieldName = parser.currentName();
+                JsonToken valueToken = parser.nextToken();
+                if (valueToken != JsonToken.VALUE_STRING) {
+                    continue;
+                }
+                if ("url".equals(fieldName) || "image_url".equals(fieldName)) {
+                    String url = parser.getValueAsString();
+                    if (StringUtils.hasText(url)) {
+                        // 生产建议优先使用 data[0].url，拿到 URL 后立即返回，避免继续扫描后续大字段。
+                        log.info("{} 响应命中图片 URL，frameIndex={}", scene, frameIndex);
+                        return url;
+                    }
+                }
+                if ("b64_json".equals(fieldName)) {
+                    // 默认 URL 模式下直接把 b64_json 流式落盘；只有显式 base64 模式才返回 data URI。
+                    return convertB64JsonToImageUrl(parser, scene, frameIndex);
+                }
             }
-        }
-        return null;
-    }
-
-    private String extractImageUrlFromDataItem(Map<?, ?> item) {
-        Object url = item.get("url");
-        if (url instanceof String value) {
-            return value;
-        }
-        Object b64Json = item.get("b64_json");
-        if (b64Json instanceof String value) {
-            // image-2 常见返回 data[0].b64_json；按配置返回 URL 或 data URI。
-            return convertB64JsonToImageUrl(value);
-        }
-        Object imageUrl = item.get("image_url");
-        if (imageUrl instanceof String value) {
-            return value;
-        }
-        if (imageUrl instanceof Map<?, ?> imageUrlMap && imageUrlMap.get("url") instanceof String value) {
-            return value;
         }
         return null;
     }
@@ -277,6 +304,17 @@ public class ImageProviderClient {
             return "data:image/png;base64," + b64Json;
         }
         return generatedImageStorageService.saveBase64Png(b64Json);
+    }
+
+    private String convertB64JsonToImageUrl(com.fasterxml.jackson.core.JsonParser parser, String scene, Integer frameIndex) throws IOException {
+        if ("base64".equalsIgnoreCase(properties.getImageProvider().getB64JsonOutputMode())) {
+            String b64Json = parser.getValueAsString();
+            log.info("{} 响应命中 b64_json，frameIndex={}, outputMode=base64, base64Length={}",
+                    scene, frameIndex, b64Json.length());
+            return "data:image/png;base64," + b64Json;
+        }
+        log.info("{} 响应命中 b64_json，frameIndex={}, outputMode=url", scene, frameIndex);
+        return generatedImageStorageService.saveBase64Png(writer -> parser.getText(writer));
     }
 
     private String buildPromptWithReferenceNames(KeyframeResult keyframe) {
@@ -320,6 +358,17 @@ public class ImageProviderClient {
 
     private String resolveQuality(String imageQuality) {
         return StringUtils.hasText(imageQuality) ? imageQuality : properties.getImageProvider().getQuality();
+    }
+
+    private JdkClientHttpRequestFactory createImageRequestFactory() {
+        int timeoutSeconds = properties.getImageProvider().getRequestTimeoutSeconds();
+        HttpClient httpClient = HttpClient.newBuilder()
+                // image-2 图片生成较慢，单次调用最多等待配置时间，默认 300 秒，超时后对应帧可重新生成。
+                .connectTimeout(Duration.ofSeconds(timeoutSeconds))
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
+        return requestFactory;
     }
 
     private String sanitizeImageForLog(String imageUrl) {

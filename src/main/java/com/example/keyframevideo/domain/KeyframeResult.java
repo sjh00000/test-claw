@@ -26,6 +26,8 @@ public class KeyframeResult {
     private GenerationStatusEnum status = GenerationStatusEnum.DRAFT;
     // 当前关键帧失败原因。
     private String errorMessage;
+    // 当前关键帧最新生成请求标识；旧请求晚返回时用它判断是否允许写回。
+    private String requestId;
     // 当前关键帧更新时间。
     private Instant updatedAt = Instant.now();
 

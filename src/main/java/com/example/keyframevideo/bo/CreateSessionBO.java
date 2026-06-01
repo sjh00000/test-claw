@@ -39,7 +39,7 @@ public class CreateSessionBO {
     // image-2 关键帧图输出质量，例如 low / medium / high。
     private String imageQuality = "medium";
 
-    // Seedance 视频时长，支持 -1 智能时长或 4 到 15 秒。
+    // Seedance 视频时长，单位秒，当前按厂商 r2v 限制为 4 到 15。
     private int duration = 5;
     // Seedance 输出清晰度，当前支持 480p / 720p。
     private String resolution = "720p";

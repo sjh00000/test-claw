@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.keyframevideo.config.GenerationProperties;
 import com.example.keyframevideo.domain.GenerationSession;
 import com.example.keyframevideo.domain.KeyframeResult;
+import com.example.keyframevideo.domain.ReferenceImage;
 import com.example.keyframevideo.domain.SeedanceTaskStatus;
 import com.example.keyframevideo.exception.BusinessException;
 import java.util.ArrayList;
@@ -50,13 +51,16 @@ public class SeedanceClient {
         payload.put("prompt", "关键帧生成视频");
 
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put("content", buildContent(session));
+        List<Map<String, Object>> content = buildContent(session);
+        metadata.put("content", content);
         metadata.put("duration", session.getDuration());
         metadata.put("resolution", session.getResolution());
         metadata.put("ratio", session.getRatio());
         metadata.put("generate_audio", session.isGenerateAudio());
         payload.put("metadata", metadata);
-        log.info("Seedance 提交请求参数={}", JsonParser.toJson(sanitizeResponseForLog(payload)));
+        log.info("Seedance 提交请求参数，sessionId={}, model={}, duration={}, resolution={}, ratio={}, generateAudio={}, actualContent={}",
+                session.getId(), payload.get("model"), session.getDuration(), session.getResolution(), session.getRatio(),
+                session.isGenerateAudio(), JsonParser.toJson(summarizeContentForLog(content)));
 
         Map<?, ?> response;
         try {
@@ -129,13 +133,58 @@ public class SeedanceClient {
         status.setProgress(findString(task, "progress"));
         status.setVideoUrl(extractVideoUrl(task));
         status.setFailReason(findString(task, "fail_reason", "failReason", "error", "message"));
-        log.info("Seedance 任务查询调用成功，taskId={}, providerStatus={}", taskId, status.getStatus());
+        log.info("Seedance 任务查询调用成功，taskId={}, providerStatus={}, videoUrl={}",
+                taskId, status.getStatus(), sanitizeImageForLog(status.getVideoUrl()));
         return status;
+    }
+
+    public void cancel(String taskId) {
+        GenerationProperties.Seedance seedance = properties.getSeedance();
+        if (!StringUtils.hasText(taskId)) {
+            throw new BusinessException("Seedance 任务 ID 不能为空");
+        }
+        if (!StringUtils.hasText(seedance.getBaseUrl()) || !StringUtils.hasText(seedance.getApiKey())) {
+            // 本地 mock 模式只记录取消动作，不调用外部厂商。
+            log.info("Seedance 未配置厂商参数，跳过 mock 任务取消，taskId={}", taskId);
+            return;
+        }
+        try {
+            String rawResponse = restClient()
+                    .delete()
+                    .uri("/v1/videos/{taskId}", taskId)
+                    .header("Authorization", "Bearer " + seedance.getApiKey())
+                    .retrieve()
+                    .body(String.class);
+            log.info("Seedance 任务取消成功，taskId={}, response={}", taskId, sanitizeRawResponseForLog(rawResponse));
+        } catch (RestClientResponseException ex) {
+            String providerMessage = extractProviderErrorMessage(ex.getResponseBodyAsString());
+            log.warn("Seedance 任务取消失败，taskId={}, httpStatus={}, providerMessage={}, responseBody={}",
+                    taskId, ex.getStatusCode(), providerMessage, sanitizeRawResponseForLog(ex.getResponseBodyAsString()));
+            throw new BusinessException(providerMessage, ex);
+        } catch (Exception ex) {
+            log.warn("Seedance 任务取消失败，taskId={}, reason={}", taskId, ex.getMessage());
+            throw new BusinessException("seedance 任务取消失败", ex);
+        }
     }
 
     private List<Map<String, Object>> buildContent(GenerationSession session) {
         List<Map<String, Object>> content = new ArrayList<>();
-        content.add(Map.of("type", "text", "text", session.getVideoPrompt()));
+        content.add(Map.of("type", "text", "text", buildVideoInstructionText(session)));
+
+        List<ReferenceImage> referenceImages = session.getReferenceImages();
+        for (int index = 0; index < referenceImages.size(); index++) {
+            ReferenceImage referenceImage = referenceImages.get(index);
+            if (!StringUtils.hasText(referenceImage.getImageUrl())) {
+                continue;
+            }
+            // 每张主体参考图前追加文本说明，让 Seedance 知道该图对应哪个角色/主体及其视觉特征。
+            content.add(Map.of("type", "text", "text", buildReferenceImageText(referenceImage, index)));
+            content.add(Map.of(
+                    "type", "image_url",
+                    "image_url", Map.of("url", referenceImage.getImageUrl()),
+                    "role", "reference_image"
+            ));
+        }
 
         List<KeyframeResult> keyframes = session.getKeyframes();
         for (int index = 0; index < keyframes.size(); index++) {
@@ -143,7 +192,9 @@ public class SeedanceClient {
             if (!StringUtils.hasText(keyframe.getGeneratedImageUrl())) {
                 continue;
             }
-            // Seedance 文档要求首帧/首尾帧/参考图三种图片场景互斥；这里使用多模态参考生视频。
+            // 每张关键帧图前追加帧说明，避免视频模型只看到图片而无法对应剧情顺序和镜头意图。
+            content.add(Map.of("type", "text", "text", buildKeyframeImageText(keyframe, index)));
+            // Seedance 文档要求首帧/首尾帧/参考图三种图片场景互斥；这里统一使用多模态参考生视频。
             content.add(Map.of(
                     "type", "image_url",
                     "image_url", Map.of("url", keyframe.getGeneratedImageUrl()),
@@ -153,20 +204,93 @@ public class SeedanceClient {
         return content;
     }
 
-    private String extractVideoUrl(Map<?, ?> task) {
-        String directUrl = findString(task, "url", "video_url", "videoUrl");
-        if (StringUtils.hasText(directUrl)) {
-            return directUrl;
-        }
-        Object data = task == null ? null : task.get("data");
-        if (data instanceof Map<?, ?> dataMap) {
-            String dataUrl = findString(dataMap, "url", "video_url", "videoUrl");
-            if (StringUtils.hasText(dataUrl)) {
-                return dataUrl;
+    private String buildVideoInstructionText(GenerationSession session) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("视频整体描述：\n")
+                .append(session.getVideoPrompt())
+                .append("\n\n参考图与关键帧使用规则：\n")
+                .append("1. 后续图片分为主体参考图和关键帧参考图；主体参考图用于保持人物/主体外观一致，关键帧参考图用于确定镜头顺序、画面构图和剧情节点。\n")
+                .append("2. 参考图名称只用于理解图片对应关系，不要把角色名、参考图名、关键帧名作为持续字幕、水印、Logo 或画面文字呈现。\n")
+                .append("3. 如果视频描述需要旁白或对白，请将其作为声音/叙事节奏处理；除非明确要求，不要生成大段屏幕文字。\n");
+        if (!session.getReferenceImages().isEmpty()) {
+            builder.append("\n主体参考图对应关系：\n");
+            for (int index = 0; index < session.getReferenceImages().size(); index++) {
+                ReferenceImage referenceImage = session.getReferenceImages().get(index);
+                builder.append(index + 1)
+                        .append(". ")
+                        .append(resolveReferenceImageName(referenceImage, index));
+                builder.append("\n");
             }
-            Object content = dataMap.get("content");
-            if (content instanceof Map<?, ?> contentMap) {
-                return findString(contentMap, "video_url", "videoUrl", "url");
+        }
+        if (!session.getKeyframes().isEmpty()) {
+            builder.append("\n关键帧顺序说明：\n");
+            for (int index = 0; index < session.getKeyframes().size(); index++) {
+                KeyframeResult keyframe = session.getKeyframes().get(index);
+                builder.append("关键帧 ")
+                        .append(keyframe.getIndex() > 0 ? keyframe.getIndex() : index + 1)
+                        .append("：")
+                        .append(StringUtils.hasText(keyframe.getPrompt()) ? keyframe.getPrompt() : "按对应图片画面承接")
+                        .append("\n");
+            }
+        }
+        return builder.toString();
+    }
+
+    private String buildReferenceImageText(ReferenceImage referenceImage, int index) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("下面这张图片是主体参考图 ")
+                .append(index + 1)
+                .append("，内部标签为“")
+                .append(resolveReferenceImageName(referenceImage, index))
+                .append("”。");
+        builder.append("请把它作为对应角色/主体的身份参考图使用，但不要把内部标签长期显示在视频画面中。");
+        return builder.toString();
+    }
+
+    private String buildKeyframeImageText(KeyframeResult keyframe, int index) {
+        int frameIndex = keyframe.getIndex() > 0 ? keyframe.getIndex() : index + 1;
+        StringBuilder builder = new StringBuilder();
+        builder.append("下面这张图片是关键帧 ")
+                .append(frameIndex)
+                .append(" 的参考图。");
+        builder.append("请按视频整体描述中“关键帧 ")
+                .append(frameIndex)
+                .append("”对应的画面要求承接前后镜头。");
+        return builder.toString();
+    }
+
+    private String resolveReferenceImageName(ReferenceImage referenceImage, int index) {
+        if (StringUtils.hasText(referenceImage.getName())) {
+            return referenceImage.getName();
+        }
+        return "参考图" + (index + 1);
+    }
+
+    private String extractVideoUrl(Map<?, ?> task) {
+        return findVideoUrlDeep(task);
+    }
+
+    private String findVideoUrlDeep(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            String directUrl = findString(map,
+                    "video_url", "videoUrl", "url", "download_url", "downloadUrl",
+                    "result_url", "resultUrl", "output_url", "outputUrl");
+            if (StringUtils.hasText(directUrl)) {
+                return directUrl;
+            }
+            for (Object nestedValue : map.values()) {
+                String nestedUrl = findVideoUrlDeep(nestedValue);
+                if (StringUtils.hasText(nestedUrl)) {
+                    return nestedUrl;
+                }
+            }
+        }
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                String nestedUrl = findVideoUrlDeep(item);
+                if (StringUtils.hasText(nestedUrl)) {
+                    return nestedUrl;
+                }
             }
         }
         return null;

@@ -31,12 +31,11 @@ export function generateReferenceImage(data) {
   })
 }
 
-export function generateKeyframes(sessionId) {
-  return request(`/${sessionId}/keyframes`, { method: 'POST' })
-}
-
-export function submitVideo(sessionId) {
-  return request(`/${sessionId}/video`, { method: 'POST' })
+export function generateKeyframe(sessionId, frameIndex, data) {
+  return request(`/${sessionId}/keyframes/${frameIndex}`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
 }
 
 export function submitVideoFromKeyframes(data) {
@@ -48,4 +47,8 @@ export function submitVideoFromKeyframes(data) {
 
 export function refreshVideo(sessionId) {
   return request(`/${sessionId}/video/status`, { method: 'POST' })
+}
+
+export function cancelVideo(sessionId) {
+  return request(`/${sessionId}/video/cancel`, { method: 'POST' })
 }
