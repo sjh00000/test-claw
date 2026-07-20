@@ -1,8 +1,8 @@
-const BASE_URL = '/api/generation-sessions'
+const API_BASE = '/api'
 
 async function request(path, options = {}) {
-  // 后端统一返回 R<T>，这里集中拆包和错误处理，页面层只接收 data。
-  const response = await fetch(`${BASE_URL}${path}`, {
+  // 后端统一返回 R<T>，这里集中拆包，页面只处理业务数据。
+  const response = await fetch(`${API_BASE}${path}`, {
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {})
@@ -17,38 +17,30 @@ async function request(path, options = {}) {
   return payload.data
 }
 
-export function createSession(data) {
-  return request('', {
+export function login(data) {
+  return request('/auth/login', {
     method: 'POST',
     body: JSON.stringify(data)
   })
 }
 
-export function generateReferenceImage(data) {
-  return request('/reference-images', {
+export function generateImage(data) {
+  return request('/generation/images', {
     method: 'POST',
     body: JSON.stringify(data)
   })
 }
 
-export function generateKeyframe(sessionId, frameIndex, data) {
-  return request(`/${sessionId}/keyframes/${frameIndex}`, {
+export function generateVideo(data) {
+  return request('/generation/videos', {
     method: 'POST',
     body: JSON.stringify(data)
   })
 }
 
-export function submitVideoFromKeyframes(data) {
-  return request('/video', {
+export function queryVideoStatus(data) {
+  return request('/generation/videos/status', {
     method: 'POST',
     body: JSON.stringify(data)
   })
-}
-
-export function refreshVideo(sessionId) {
-  return request(`/${sessionId}/video/status`, { method: 'POST' })
-}
-
-export function cancelVideo(sessionId) {
-  return request(`/${sessionId}/video/cancel`, { method: 'POST' })
 }

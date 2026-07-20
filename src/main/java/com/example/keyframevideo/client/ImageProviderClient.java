@@ -1,9 +1,12 @@
 package com.example.keyframevideo.client;
 
+import cn.hutool.core.collection.CollectionUtil;
+import cn.hutool.core.util.StrUtil;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.keyframevideo.bo.ProviderConfigBO;
 import com.example.keyframevideo.config.GenerationProperties;
-import com.example.keyframevideo.domain.KeyframeResult;
+import com.example.keyframevideo.domain.ReferenceImage;
 import com.example.keyframevideo.exception.BusinessException;
 import com.example.keyframevideo.service.GeneratedImageStorageService;
 import java.io.IOException;
@@ -31,7 +34,6 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StreamUtils;
-import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.ResourceAccessException;
@@ -61,28 +63,36 @@ public class ImageProviderClient {
         this.generatedImageStorageService = generatedImageStorageService;
     }
 
-    public String generate(KeyframeResult keyframe) {
-        GenerationProperties.ImageProvider provider = properties.getImageProvider();
-        if (!StringUtils.hasText(provider.getBaseUrl()) || !StringUtils.hasText(provider.getApiKey())) {
-            // 未配置真实厂商时返回占位图，保证前端和流程编排可以先独立联调。
-            log.info("gpt-image2 未配置厂商参数，返回占位关键帧图，frameIndex={}", keyframe.getIndex());
-            return placeholderImage(keyframe);
+    public String generate(String prompt, List<ReferenceImage> referenceImages, String imageSize, String imageQuality, ProviderConfigBO providerConfigBO) {
+        if (CollectionUtil.isEmpty(referenceImages)) {
+            // 无参考图时走纯文生图接口；有参考图时才走 edits multipart。
+            return generateReferenceImage(prompt, imageSize, imageQuality, providerConfigBO);
         }
+        return generateWithReferences(prompt, referenceImages, imageSize, imageQuality, providerConfigBO);
+    }
 
-        if (keyframe.getReferenceImageUrls().isEmpty()) {
-            throw new BusinessException("gpt-image2 图片编辑至少需要 1 张参考图");
+    private String generateWithReferences(
+            String prompt,
+            List<ReferenceImage> referenceImages,
+            String imageSize,
+            String imageQuality,
+            ProviderConfigBO providerConfigBO) {
+        GenerationProperties.ImageProvider provider = resolveImageProvider(providerConfigBO);
+        if (!isImageProviderConfigured(provider)) {
+            // 厂商 base-url、api-key、model 任一缺失都不发起真实调用，避免带空模型或凭证请求外部服务。
+            log.info("gpt-image2 未配置厂商参数，返回占位参考图编辑结果");
+            return placeholderImage(prompt);
         }
 
         String imageUrl;
         Instant startedAt = Instant.now();
-        ScheduledFuture<?> monitorFuture = startImageCallMonitor("gpt-image2 编辑接口", keyframe.getIndex(), startedAt);
+        ScheduledFuture<?> monitorFuture = startImageCallMonitor("gpt-image2 编辑接口", null, startedAt);
         try {
-            String finalPrompt = buildPromptWithReferenceNames(keyframe);
-            MultipartBodyBuilder bodyBuilder = buildMultipartBody(provider, keyframe, finalPrompt);
-            log.info("请求 image-2 编辑接口，endpoint={}, model={}, size={}, quality={}, frameIndex={}, actualPrompt={}, referenceImageCount={}, referenceImages={}",
-                    provider.getEditEndpoint(), provider.getModel(), resolveSize(keyframe), resolveQuality(keyframe),
-                    keyframe.getIndex(), finalPrompt, keyframe.getReferenceImages().size(),
-                    summarizeReferenceImages(keyframe));
+            String finalPrompt = buildPromptWithReferenceNames(prompt, referenceImages);
+            MultipartBodyBuilder bodyBuilder = buildMultipartBody(provider, referenceImages, finalPrompt, imageSize, imageQuality);
+            log.info("请求 image-2 编辑接口，endpoint={}, model={}, size={}, quality={}, actualPrompt={}, referenceImageCount={}, referenceImages={}",
+                    provider.getEditEndpoint(), provider.getModel(), resolveSize(imageSize), resolveQuality(imageQuality),
+                    finalPrompt, referenceImages.size(), summarizeReferenceImages(referenceImages));
             imageUrl = restClientBuilder
                     .baseUrl(provider.getBaseUrl())
                     .requestFactory(createImageRequestFactory())
@@ -92,34 +102,34 @@ public class ImageProviderClient {
                     .header("Authorization", "Bearer " + provider.getApiKey())
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(bodyBuilder.build())
-                    .exchange((request, clientResponse) -> parseImageResponse(clientResponse, "gpt-image2 编辑接口", keyframe.getIndex()));
+                    .exchange((request, clientResponse) -> parseImageResponse(clientResponse, "gpt-image2 编辑接口", null));
         } catch (RestClientResponseException ex) {
-            log.warn("gpt-image2 调用失败，frameIndex={}, httpStatus={}, responseBody={}",
-                    keyframe.getIndex(), ex.getStatusCode(), sanitizeRawResponseForLog(ex.getResponseBodyAsString()));
+            log.warn("gpt-image2 调用失败，httpStatus={}, responseBody={}",
+                    ex.getStatusCode(), sanitizeRawResponseForLog(ex.getResponseBodyAsString()));
             throw new BusinessException("gpt-image2 调用失败", ex);
         } catch (ResourceAccessException ex) {
-            log.warn("gpt-image2 调用超时或网络不可达，frameIndex={}, timeoutSeconds={}, reason={}",
-                    keyframe.getIndex(), provider.getRequestTimeoutSeconds(), ex.getMessage());
-            throw new BusinessException("image-2 调用超过 " + provider.getRequestTimeoutSeconds() + " 秒，请重新生成该帧", ex);
+            log.warn("gpt-image2 调用超时或网络不可达，timeoutSeconds={}, reason={}",
+                    provider.getRequestTimeoutSeconds(), ex.getMessage());
+            throw new BusinessException("image-2 调用超过 " + provider.getRequestTimeoutSeconds() + " 秒，请重新生成图片", ex);
         } catch (Exception ex) {
-            log.warn("gpt-image2 调用失败，frameIndex={}, reason={}", keyframe.getIndex(), ex.getMessage());
+            log.warn("gpt-image2 调用失败，reason={}", ex.getMessage());
             throw new BusinessException("gpt-image2 调用失败", ex);
         } finally {
             stopImageCallMonitor(monitorFuture);
         }
 
-        if (!StringUtils.hasText(imageUrl)) {
-            log.warn("gpt-image2 响应缺少图片地址，frameIndex={}", keyframe.getIndex());
+        if (StrUtil.isBlank(imageUrl)) {
+            log.warn("gpt-image2 响应缺少图片地址");
             throw new BusinessException("gpt-image2 响应中没有可用图片地址");
         }
-        log.info("gpt-image2 调用成功，frameIndex={}, elapsedSeconds={}", keyframe.getIndex(), elapsedSeconds(startedAt));
+        log.info("gpt-image2 调用成功，elapsedSeconds={}", elapsedSeconds(startedAt));
         return imageUrl;
     }
 
-    public String generateReferenceImage(String prompt, String imageSize, String imageQuality) {
-        GenerationProperties.ImageProvider provider = properties.getImageProvider();
-        if (!StringUtils.hasText(provider.getBaseUrl()) || !StringUtils.hasText(provider.getApiKey())) {
-            // 未配置真实厂商时返回占位主体图，保证前端可以先完成参考图生成流程联调。
+    public String generateReferenceImage(String prompt, String imageSize, String imageQuality, ProviderConfigBO providerConfigBO) {
+        GenerationProperties.ImageProvider provider = resolveImageProvider(providerConfigBO);
+        if (!isImageProviderConfigured(provider)) {
+            // 厂商 base-url、api-key、model 任一缺失都不发起真实调用，保证前端可以先完成参考图流程联调。
             log.info("image-2 未配置厂商参数，返回占位主体参考图");
             return placeholderImage(prompt);
         }
@@ -162,7 +172,7 @@ public class ImageProviderClient {
             stopImageCallMonitor(monitorFuture);
         }
 
-        if (!StringUtils.hasText(imageUrl)) {
+        if (StrUtil.isBlank(imageUrl)) {
             log.warn("image-2 主体参考图响应缺少图片地址");
             throw new BusinessException("image-2 响应中没有可用参考图地址");
         }
@@ -182,22 +192,51 @@ public class ImageProviderClient {
         }
     }
 
+    private boolean isImageProviderConfigured(GenerationProperties.ImageProvider provider) {
+        return StrUtil.isNotBlank(provider.getBaseUrl())
+                && StrUtil.isNotBlank(provider.getApiKey())
+                && StrUtil.isNotBlank(provider.getModel());
+    }
+
+    private GenerationProperties.ImageProvider resolveImageProvider(ProviderConfigBO providerConfigBO) {
+        GenerationProperties.ImageProvider baseProvider = properties.getImageProvider();
+        GenerationProperties.ImageProvider provider = new GenerationProperties.ImageProvider();
+        provider.setBaseUrl(resolveConfigValue(providerConfigBO == null ? null : providerConfigBO.getBaseUrl(), baseProvider.getBaseUrl()));
+        provider.setApiKey(resolveConfigValue(providerConfigBO == null ? null : providerConfigBO.getApiKey(), baseProvider.getApiKey()));
+        provider.setModel(resolveConfigValue(providerConfigBO == null ? null : providerConfigBO.getModel(), baseProvider.getModel()));
+        provider.setEditEndpoint(baseProvider.getEditEndpoint());
+        provider.setGenerationEndpoint(baseProvider.getGenerationEndpoint());
+        provider.setSize(baseProvider.getSize());
+        provider.setQuality(baseProvider.getQuality());
+        provider.setB64JsonOutputMode(baseProvider.getB64JsonOutputMode());
+        provider.setRequestTimeoutSeconds(baseProvider.getRequestTimeoutSeconds());
+        return provider;
+    }
+
+    private String resolveConfigValue(String requestValue, String propertyValue) {
+        return StrUtil.isNotBlank(requestValue) ? requestValue.trim() : propertyValue;
+    }
+
     private long elapsedSeconds(Instant startedAt) {
         return Duration.between(startedAt, Instant.now()).toSeconds();
     }
 
-    private MultipartBodyBuilder buildMultipartBody(GenerationProperties.ImageProvider provider, KeyframeResult keyframe, String finalPrompt) {
+    private MultipartBodyBuilder buildMultipartBody(
+            GenerationProperties.ImageProvider provider,
+            List<ReferenceImage> referenceImages,
+            String finalPrompt,
+            String imageSize,
+            String imageQuality) {
         MultipartBodyBuilder bodyBuilder = new MultipartBodyBuilder();
         bodyBuilder.part("model", provider.getModel());
         bodyBuilder.part("prompt", finalPrompt);
-        bodyBuilder.part("size", resolveSize(keyframe));
-        bodyBuilder.part("quality", resolveQuality(keyframe));
+        bodyBuilder.part("size", resolveSize(imageSize));
+        bodyBuilder.part("quality", resolveQuality(imageQuality));
 
         // image2 edits 接口按 image[] 接收参考图；前端输入 URL，后端下载后转成 multipart 文件。
-        for (int index = 0; index < keyframe.getReferenceImages().size(); index++) {
-            var referenceImage = keyframe.getReferenceImages().get(index);
+        for (ReferenceImage referenceImage : referenceImages) {
             String imageUrl = referenceImage.getImageUrl();
-            byte[] imageBytes = downloadReferenceImage(imageUrl, keyframe.getIndex());
+            byte[] imageBytes = downloadReferenceImage(imageUrl);
             String filename = sanitizeFilename(referenceImage.getName()) + ".png";
             bodyBuilder.part("image[]", new NamedByteArrayResource(imageBytes, filename))
                     .header(HttpHeaders.CONTENT_DISPOSITION, "form-data; name=\"image[]\"; filename=\"" + filename + "\"")
@@ -206,11 +245,11 @@ public class ImageProviderClient {
         return bodyBuilder;
     }
 
-    private byte[] downloadReferenceImage(String imageUrl, int frameIndex) {
+    private byte[] downloadReferenceImage(String imageUrl) {
         try {
             if (imageUrl.startsWith("data:image/")) {
                 byte[] imageBytes = decodeDataImage(imageUrl);
-                log.info("参考图解析成功，frameIndex={}, byteSize={}", frameIndex, imageBytes.length);
+                log.info("参考图解析成功，byteSize={}", imageBytes.length);
                 return imageBytes;
             }
             byte[] imageBytes = restClientBuilder
@@ -223,10 +262,10 @@ public class ImageProviderClient {
             if (imageBytes == null || imageBytes.length == 0) {
                 throw new BusinessException("参考图内容为空");
             }
-            log.info("参考图下载成功，frameIndex={}, byteSize={}", frameIndex, imageBytes.length);
+            log.info("参考图下载成功，byteSize={}", imageBytes.length);
             return imageBytes;
         } catch (Exception ex) {
-            log.warn("参考图下载失败，frameIndex={}, imageUrl={}, reason={}", frameIndex, imageUrl, ex.getMessage());
+            log.warn("参考图下载失败，imageUrl={}, reason={}", imageUrl, ex.getMessage());
             throw new BusinessException("参考图下载失败：" + imageUrl, ex);
         }
     }
@@ -250,7 +289,7 @@ public class ImageProviderClient {
         try {
             // image-2 经常返回超长 b64_json；这里只流式扫描图片字段，避免把完整响应构造成 Map。
             String imageUrl = extractImageUrlFromStream(clientResponse, scene, frameIndex);
-            log.info("{} 响应解析成功，frameIndex={}, hasImage={}", scene, frameIndex, StringUtils.hasText(imageUrl));
+            log.info("{} 响应解析成功，frameIndex={}, hasImage={}", scene, frameIndex, StrUtil.isNotBlank(imageUrl));
             return imageUrl;
         } catch (Exception ex) {
             log.warn("{} 响应解析失败，frameIndex={}, httpStatus={}, reason={}",
@@ -272,7 +311,7 @@ public class ImageProviderClient {
                 }
                 if ("url".equals(fieldName) || "image_url".equals(fieldName)) {
                     String url = parser.getValueAsString();
-                    if (StringUtils.hasText(url)) {
+                    if (StrUtil.isNotBlank(url)) {
                         // 生产建议优先使用 data[0].url，拿到 URL 后立即返回，避免继续扫描后续大字段。
                         log.info("{} 响应命中图片 URL，frameIndex={}", scene, frameIndex);
                         return url;
@@ -285,13 +324,6 @@ public class ImageProviderClient {
             }
         }
         return null;
-    }
-
-    private String placeholderImage(KeyframeResult keyframe) {
-        List<String> parts = new ArrayList<>();
-        parts.add("Frame " + keyframe.getIndex());
-        parts.add(keyframe.getPrompt());
-        return "https://placehold.co/1280x720/png?text=" + String.join(" - ", parts).replace(" ", "+");
     }
 
     private String placeholderImage(String prompt) {
@@ -317,20 +349,20 @@ public class ImageProviderClient {
         return generatedImageStorageService.saveBase64Png(writer -> parser.getText(writer));
     }
 
-    private String buildPromptWithReferenceNames(KeyframeResult keyframe) {
-        String referenceGuide = keyframe.getReferenceImages().stream()
+    private String buildPromptWithReferenceNames(String prompt, List<ReferenceImage> referenceImages) {
+        String referenceGuide = referenceImages.stream()
                 .map(referenceImage -> "- " + referenceImage.getName() + "：对应上传文件 " + sanitizeFilename(referenceImage.getName()) + ".png")
                 .collect(Collectors.joining("\n"));
         // 参考图名称是给模型理解多参考图对应关系的提示，不要求生成到画面里。
-        return keyframe.getPrompt()
+        return prompt
                 + "\n\n参考图对应关系：\n"
                 + referenceGuide
                 + "\n请根据以上名称区分不同参考图中的角色/主体，但不要在画面中生成这些名称文字、字幕、姓名牌或标题。";
     }
 
-    private List<Map<String, Object>> summarizeReferenceImages(KeyframeResult keyframe) {
+    private List<Map<String, Object>> summarizeReferenceImages(List<ReferenceImage> referenceImages) {
         List<Map<String, Object>> summary = new ArrayList<>();
-        keyframe.getReferenceImages().forEach(referenceImage -> {
+        referenceImages.forEach(referenceImage -> {
             Map<String, Object> item = new HashMap<>();
             item.put("name", referenceImage.getName());
             item.put("image", sanitizeImageForLog(referenceImage.getImageUrl()));
@@ -340,24 +372,16 @@ public class ImageProviderClient {
     }
 
     private String sanitizeFilename(String filename) {
-        String value = StringUtils.hasText(filename) ? filename.trim() : "reference";
+        String value = StrUtil.isNotBlank(filename) ? filename.trim() : "reference";
         return value.replaceAll("[\\\\/:*?\"<>|\\s]+", "-");
     }
 
-    private String resolveSize(KeyframeResult keyframe) {
-        return resolveSize(keyframe.getImageSize());
-    }
-
     private String resolveSize(String imageSize) {
-        return StringUtils.hasText(imageSize) ? imageSize : properties.getImageProvider().getSize();
-    }
-
-    private String resolveQuality(KeyframeResult keyframe) {
-        return resolveQuality(keyframe.getImageQuality());
+        return StrUtil.isNotBlank(imageSize) ? imageSize : properties.getImageProvider().getSize();
     }
 
     private String resolveQuality(String imageQuality) {
-        return StringUtils.hasText(imageQuality) ? imageQuality : properties.getImageProvider().getQuality();
+        return StrUtil.isNotBlank(imageQuality) ? imageQuality : properties.getImageProvider().getQuality();
     }
 
     private JdkClientHttpRequestFactory createImageRequestFactory() {
@@ -372,7 +396,7 @@ public class ImageProviderClient {
     }
 
     private String sanitizeImageForLog(String imageUrl) {
-        if (!StringUtils.hasText(imageUrl)) {
+        if (StrUtil.isBlank(imageUrl)) {
             return "";
         }
         if (imageUrl.startsWith("data:image/")) {

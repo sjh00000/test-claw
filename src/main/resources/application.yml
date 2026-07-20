@@ -2,16 +2,31 @@ spring:
   application:
     name: keyframe-video-studio
   datasource:
-    # SQLite 本地数据库文件，项目启动时自动创建 data/keyframe-video-studio.db。
-    url: jdbc:sqlite:data/keyframe-video-studio.db
-    driver-class-name: org.sqlite.JDBC
-  ai:
-    dashscope:
-      # Spring AI Alibaba 自动配置要求必须存在 api-key；本项目实际厂商调用走自定义 client。
-      api-key: ${DASHSCOPE_API_KEY:local-dev-placeholder}
-      agent:
-        # Agent 自动配置也会读取独立 key，本地用占位值避免阻断启动。
-        api-key: ${DASHSCOPE_AGENT_API_KEY:${DASHSCOPE_API_KEY:local-dev-placeholder}}
+    # MySQL 用于持久化用户信息，keyframe_video_studio 库已通过 SQL 初始化。
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/keyframe_video_studio?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: keyframe-video-studio-pool
+      maximum-pool-size: ${MYSQL_MAX_POOL_SIZE:10}
+      minimum-idle: ${MYSQL_MIN_IDLE:2}
+      connection-timeout: ${MYSQL_CONNECTION_TIMEOUT_MS:30000}
+      idle-timeout: ${MYSQL_IDLE_TIMEOUT_MS:600000}
+      max-lifetime: ${MYSQL_MAX_LIFETIME_MS:1800000}
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      encoding: UTF-8
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
 
 server:
   # 后端 API 端口，前端 Vite 通过 /api 代理到这里。
@@ -19,12 +34,12 @@ server:
 
 generation:
   image-provider:
-    # gpt-image2 厂商网关域名，默认使用 Euzhi API。
-    base-url: ${GPT_IMAGE2_BASE_URL:https://api.euzhi.com}
-    # gpt-image2 厂商密钥，禁止写死在配置文件。
-    api-key: ${GPT_IMAGE2_API_KEY:${EUZHI_API_KEY:}}
-    # 图片生成模型名称。
-    model: ${GPT_IMAGE2_MODEL:gpt-image-2}
+    # gpt-image2 厂商网关域名，由部署环境配置。
+    base-url: ${GPT_IMAGE2_BASE_URL:}
+    # gpt-image2 厂商密钥，由部署环境配置，禁止写死在配置文件。
+    api-key: ${GPT_IMAGE2_API_KEY:}
+    # 图片生成模型名称，由部署环境配置。
+    model: ${GPT_IMAGE2_MODEL:}
     # 图片编辑接口路径，对应 image2 示例中的 /v1/images/edits。
     edit-endpoint: ${GPT_IMAGE2_EDIT_ENDPOINT:/v1/images/edits}
     # 图片生成接口路径，用于先生成主体/角色参考图。
@@ -38,14 +53,12 @@ generation:
     # image-2 单次调用超时时间，超过后该帧可重新生成。
     request-timeout-seconds: ${GPT_IMAGE2_REQUEST_TIMEOUT_SECONDS:600}
   seedance:
-    # Seedance 文档中的 BASE_URL，未配置时启用 mock 视频任务。
-    base-url: ${SEEDANCE_BASE_URL:https://www.moyu.info}
-    # Seedance Bearer Token，禁止写死在配置文件。
+    # Seedance 文档中的 BASE_URL，由部署环境配置；未配置时启用 mock 视频任务。
+    base-url: ${SEEDANCE_BASE_URL:}
+    # Seedance Bearer Token，由部署环境配置，禁止写死在配置文件。
     api-key: ${SEEDANCE_API_KEY:}
-    # 标准视频生成模型。
-    model: ${SEEDANCE_MODEL:doubao-seedance-2-0-260128}
-    # 快速视频生成模型。
-    fast-model: ${SEEDANCE_FAST_MODEL:doubao-seedance-2-0-fast-260128}
+    # 标准视频生成模型，由部署环境配置。
+    model: ${SEEDANCE_MODEL:}
     # 后端建议轮询间隔，保留给后续前端动态读取。
     poll-interval-seconds: ${SEEDANCE_POLL_INTERVAL_SECONDS:15}
   assets:

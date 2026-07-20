@@ -1,5 +1,6 @@
 package com.example.keyframevideo.service;
 
+import cn.hutool.core.util.StrUtil;
 import com.example.keyframevideo.config.GenerationProperties;
 import com.example.keyframevideo.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,7 +15,6 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -26,7 +26,7 @@ public class GeneratedImageStorageService {
     private final GenerationProperties properties;
 
     public String saveBase64Png(String b64Json) {
-        if (!StringUtils.hasText(b64Json)) {
+        if (StrUtil.isBlank(b64Json)) {
             throw new BusinessException("图片 base64 内容为空");
         }
         try {
@@ -79,7 +79,7 @@ public class GeneratedImageStorageService {
         String urlPrefix = properties.getAssets().getImageUrlPrefix();
         String normalizedPrefix = urlPrefix.startsWith("/") ? urlPrefix : "/" + urlPrefix;
         String publicBaseUrl = properties.getAssets().getPublicBaseUrl();
-        if (StringUtils.hasText(publicBaseUrl)) {
+        if (StrUtil.isNotBlank(publicBaseUrl)) {
             return publicBaseUrl.replaceAll("/+$", "") + normalizedPrefix + "/" + filename;
         }
         ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();

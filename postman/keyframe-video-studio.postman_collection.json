@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "Keyframe Video Studio",
+    "name": "Text Generation Studio",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -9,13 +9,41 @@
       "value": "http://localhost:8080"
     },
     {
-      "key": "sessionId",
+      "key": "userId",
+      "value": "1"
+    },
+    {
+      "key": "imageProviderBaseUrl",
+      "value": "https://your-image-provider.example.com"
+    },
+    {
+      "key": "imageProviderApiKey",
+      "value": "your-image-provider-api-key"
+    },
+    {
+      "key": "imageProviderModel",
+      "value": "gpt-image-2"
+    },
+    {
+      "key": "seedanceBaseUrl",
+      "value": "https://your-seedance-provider.example.com"
+    },
+    {
+      "key": "seedanceApiKey",
+      "value": "your-seedance-api-key"
+    },
+    {
+      "key": "seedanceModel",
+      "value": "doubao-seedance-2-0"
+    },
+    {
+      "key": "taskId",
       "value": ""
     }
   ],
   "item": [
     {
-      "name": "生成主体参考图",
+      "name": "登录或创建用户",
       "request": {
         "method": "POST",
         "header": [
@@ -24,15 +52,15 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/generation-sessions/reference-images",
+        "url": "{{baseUrl}}/api/auth/login",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"prompt\": \"一位赛博朋克风格冒险者，银色短发，黑色机能外套，电影级角色设定图\"\n}"
+          "raw": "{\n  \"username\": \"demo\",\n  \"password\": \"demo123\",\n  \"displayName\": \"演示用户\"\n}"
         }
       }
     },
     {
-      "name": "创建会话",
+      "name": "文生图（无参考图）",
       "request": {
         "method": "POST",
         "header": [
@@ -41,39 +69,62 @@
             "value": "application/json"
           }
         ],
-        "url": "{{baseUrl}}/api/generation-sessions",
+        "url": "{{baseUrl}}/api/generation/images",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"videoPrompt\": \"一位冒险者穿过雨后的霓虹街道，镜头从远景推进到近景，氛围电影感\",\n  \"referenceImageUrls\": [\"https://placehold.co/1024x1024/png?text=main+character\"],\n  \"keyframeCount\": 3,\n  \"duration\": 5,\n  \"resolution\": \"720p\",\n  \"ratio\": \"16:9\",\n  \"generateAudio\": true,\n  \"fastMode\": false,\n  \"keyframes\": [\n    {\n      \"prompt\": \"雨后的霓虹街道远景，地面积水反射灯光，冒险者站在画面中央\"\n    },\n    {\n      \"prompt\": \"镜头推近，冒险者抬头看向远方，蓝绿色霓虹照亮侧脸\"\n    },\n    {\n      \"prompt\": \"近景定格，冒险者坚定地向镜头外走去，背景光晕柔和\"\n    }\n  ]\n}"
+          "raw": "{\n  \"userId\": {{userId}},\n  \"prompt\": \"雨后霓虹街道上的未来城市，电影感，细节丰富\",\n  \"referenceImages\": [],\n  \"imageProviderConfig\": {\n    \"baseUrl\": \"{{imageProviderBaseUrl}}\",\n    \"apiKey\": \"{{imageProviderApiKey}}\",\n    \"model\": \"{{imageProviderModel}}\"\n  },\n  \"imageSize\": \"1024x1024\",\n  \"imageQuality\": \"medium\"\n}"
         }
       }
     },
     {
-      "name": "生成关键帧",
+      "name": "文生图（有参考图）",
       "request": {
         "method": "POST",
-        "url": "{{baseUrl}}/api/generation-sessions/{{sessionId}}/keyframes"
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/generation/images",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": {{userId}},\n  \"prompt\": \"保持参考图主体一致，生成电影海报风格半身像\",\n  \"referenceImages\": [\n    {\n      \"imageUrl\": \"https://placehold.co/1024x1024/png?text=reference\",\n      \"name\": \"主体参考图\"\n    }\n  ],\n  \"imageProviderConfig\": {\n    \"baseUrl\": \"{{imageProviderBaseUrl}}\",\n    \"apiKey\": \"{{imageProviderApiKey}}\",\n    \"model\": \"{{imageProviderModel}}\"\n  },\n  \"imageSize\": \"1024x1024\",\n  \"imageQuality\": \"medium\"\n}"
+        }
       }
     },
     {
-      "name": "提交视频",
+      "name": "文生视频",
       "request": {
         "method": "POST",
-        "url": "{{baseUrl}}/api/generation-sessions/{{sessionId}}/video"
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/generation/videos",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": {{userId}},\n  \"prompt\": \"一位冒险者穿过雨后的霓虹街道，镜头从远景推进到近景，氛围电影感\",\n  \"referenceImages\": [],\n  \"seedanceConfig\": {\n    \"baseUrl\": \"{{seedanceBaseUrl}}\",\n    \"apiKey\": \"{{seedanceApiKey}}\",\n    \"model\": \"{{seedanceModel}}\"\n  },\n  \"duration\": 5,\n  \"resolution\": \"720p\",\n  \"ratio\": \"16:9\",\n  \"generateAudio\": true\n}"
+        }
       }
     },
     {
-      "name": "刷新视频状态",
+      "name": "查询视频状态",
       "request": {
         "method": "POST",
-        "url": "{{baseUrl}}/api/generation-sessions/{{sessionId}}/video/status"
-      }
-    },
-    {
-      "name": "查询会话",
-      "request": {
-        "method": "GET",
-        "url": "{{baseUrl}}/api/generation-sessions/{{sessionId}}"
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/generation/videos/status",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taskId\": \"{{taskId}}\",\n  \"seedanceConfig\": {\n    \"baseUrl\": \"{{seedanceBaseUrl}}\",\n    \"apiKey\": \"{{seedanceApiKey}}\",\n    \"model\": \"{{seedanceModel}}\"\n  }\n}"
+        }
       }
     }
   ]

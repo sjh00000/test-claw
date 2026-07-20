@@ -13,12 +13,12 @@ public class GenerationProperties {
 
     @Data
     public static class ImageProvider {
-        // gpt-image2 厂商网关域名，例如 https://api.euzhi.com。
-        private String baseUrl = "https://api.euzhi.com";
-        // gpt-image2 厂商鉴权密钥，只允许通过环境变量注入，禁止写入代码或日志。
+        // gpt-image2 厂商网关域名，由部署环境配置。
+        private String baseUrl = "";
+        // gpt-image2 厂商鉴权密钥，由部署环境配置，禁止写入代码或日志。
         private String apiKey = "";
-        // 图片生成模型名称，默认使用用户指定的 gpt-image-2。
-        private String model = "gpt-image-2";
+        // 图片生成模型名称，由部署环境配置。
+        private String model = "";
         // 图片编辑接口路径，对应 image2 示例中的 /v1/images/edits。
         private String editEndpoint = "/v1/images/edits";
         // 图片生成接口路径，用于先生成主体/角色参考图。
@@ -35,14 +35,12 @@ public class GenerationProperties {
 
     @Data
     public static class Seedance {
-        // Seedance 厂商网关域名，对应文档中的 BASE_URL。
+        // Seedance 厂商网关域名，由部署环境配置。
         private String baseUrl = "";
-        // Seedance Bearer Token，只允许通过环境变量注入。
+        // Seedance Bearer Token，由部署环境配置。
         private String apiKey = "";
-        // 标准质量视频模型。
-        private String model = "doubao-seedance-2-0-260128";
-        // 快速生成视频模型，由前端 fastMode 控制是否使用。
-        private String fastModel = "doubao-seedance-2-0-fast-260128";
+        // 标准质量视频模型，由部署环境配置。
+        private String model = "";
         // 建议轮询间隔，前端当前用 5 秒主动刷新，后续可由接口下发此值。
         private int pollIntervalSeconds = 15;
 
