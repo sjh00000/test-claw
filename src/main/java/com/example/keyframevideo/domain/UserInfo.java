@@ -14,7 +14,10 @@ public class UserInfo {
     private Long id;
     private String username;
     private String displayName;
-    private String passwordHash;
+    private String password;
+    private Boolean admin;
+    private Integer imageCallLimit;
+    private Integer videoCallLimit;
     private Instant createdAt;
     private Instant updatedAt;
 }

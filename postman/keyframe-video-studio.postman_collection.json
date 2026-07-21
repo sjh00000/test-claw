@@ -9,41 +9,46 @@
       "value": "http://localhost:8080"
     },
     {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
       "key": "userId",
       "value": "1"
-    },
-    {
-      "key": "imageProviderBaseUrl",
-      "value": "https://your-image-provider.example.com"
-    },
-    {
-      "key": "imageProviderApiKey",
-      "value": "your-image-provider-api-key"
-    },
-    {
-      "key": "imageProviderModel",
-      "value": "gpt-image-2"
-    },
-    {
-      "key": "seedanceBaseUrl",
-      "value": "https://your-seedance-provider.example.com"
-    },
-    {
-      "key": "seedanceApiKey",
-      "value": "your-seedance-api-key"
-    },
-    {
-      "key": "seedanceModel",
-      "value": "doubao-seedance-2-0"
     },
     {
       "key": "taskId",
       "value": ""
     }
   ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
   "item": [
     {
       "name": "登录或创建用户",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.data && body.data.accessToken) {",
+              "  pm.collectionVariables.set('accessToken', body.data.accessToken);",
+              "  pm.collectionVariables.set('userId', body.data.userId);",
+              "}"
+            ]
+          }
+        }
+      ],
       "request": {
         "method": "POST",
         "header": [
@@ -55,7 +60,126 @@
         "url": "{{baseUrl}}/api/auth/login",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"username\": \"demo\",\n  \"password\": \"demo123\",\n  \"displayName\": \"演示用户\"\n}"
+          "raw": "{\n  \"username\": \"demo\",\n  \"password\": \"demo123\"\n}"
+        }
+      }
+    },
+    {
+      "name": "管理员-用户列表",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/users",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"keyword\": \"\"\n}"
+        }
+      }
+    },
+    {
+      "name": "管理员-更新用户设置",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/users/update",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": {{userId}},\n  \"imageCallLimit\": 20,\n  \"videoCallLimit\": 5\n}"
+        }
+      }
+    },
+    {
+      "name": "管理员-保存图片服务配置",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/model-configs/save",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"serviceType\": \"IMAGE\",\n  \"baseUrl\": \"https://your-image-provider.example.com\",\n  \"apiKey\": \"your-image-provider-api-key\",\n  \"model\": \"gpt-image-2\",\n  \"enabled\": true\n}"
+        }
+      }
+    },
+    {
+      "name": "管理员-保存视频服务配置",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/model-configs/save",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"serviceType\": \"VIDEO\",\n  \"baseUrl\": \"https://your-seedance-provider.example.com\",\n  \"apiKey\": \"your-seedance-api-key\",\n  \"model\": \"doubao-seedance-2-0\",\n  \"enabled\": true\n}"
+        }
+      }
+    },
+    {
+      "name": "管理员-模型配置列表",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/model-configs",
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "管理员-日志筛选（文生图）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/logs",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"\",\n  \"operationType\": \"TEXT_TO_IMAGE\",\n  \"status\": \"\"\n}"
+        }
+      }
+    },
+    {
+      "name": "管理员-日志筛选（文生视频）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/logs",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"\",\n  \"operationType\": \"TEXT_TO_VIDEO\",\n  \"status\": \"\"\n}"
         }
       }
     },
@@ -72,7 +196,7 @@
         "url": "{{baseUrl}}/api/generation/images",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"userId\": {{userId}},\n  \"prompt\": \"雨后霓虹街道上的未来城市，电影感，细节丰富\",\n  \"referenceImages\": [],\n  \"imageProviderConfig\": {\n    \"baseUrl\": \"{{imageProviderBaseUrl}}\",\n    \"apiKey\": \"{{imageProviderApiKey}}\",\n    \"model\": \"{{imageProviderModel}}\"\n  },\n  \"imageSize\": \"1024x1024\",\n  \"imageQuality\": \"medium\"\n}"
+          "raw": "{\n  \"prompt\": \"雨后霓虹街道上的未来城市，电影感，细节丰富\",\n  \"referenceImages\": [],\n  \"imageSize\": \"1024x1024\",\n  \"imageQuality\": \"medium\"\n}"
         }
       }
     },
@@ -89,7 +213,7 @@
         "url": "{{baseUrl}}/api/generation/images",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"userId\": {{userId}},\n  \"prompt\": \"保持参考图主体一致，生成电影海报风格半身像\",\n  \"referenceImages\": [\n    {\n      \"imageUrl\": \"https://placehold.co/1024x1024/png?text=reference\",\n      \"name\": \"主体参考图\"\n    }\n  ],\n  \"imageProviderConfig\": {\n    \"baseUrl\": \"{{imageProviderBaseUrl}}\",\n    \"apiKey\": \"{{imageProviderApiKey}}\",\n    \"model\": \"{{imageProviderModel}}\"\n  },\n  \"imageSize\": \"1024x1024\",\n  \"imageQuality\": \"medium\"\n}"
+          "raw": "{\n  \"prompt\": \"保持参考图主体一致，生成电影海报风格半身像\",\n  \"referenceImages\": [\n    {\n      \"imageUrl\": \"https://placehold.co/1024x1024/png?text=reference\",\n      \"name\": \"主体参考图\"\n    }\n  ],\n  \"imageSize\": \"1024x1024\",\n  \"imageQuality\": \"medium\"\n}"
         }
       }
     },
@@ -106,7 +230,7 @@
         "url": "{{baseUrl}}/api/generation/videos",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"userId\": {{userId}},\n  \"prompt\": \"一位冒险者穿过雨后的霓虹街道，镜头从远景推进到近景，氛围电影感\",\n  \"referenceImages\": [],\n  \"seedanceConfig\": {\n    \"baseUrl\": \"{{seedanceBaseUrl}}\",\n    \"apiKey\": \"{{seedanceApiKey}}\",\n    \"model\": \"{{seedanceModel}}\"\n  },\n  \"duration\": 5,\n  \"resolution\": \"720p\",\n  \"ratio\": \"16:9\",\n  \"generateAudio\": true\n}"
+          "raw": "{\n  \"prompt\": \"一位冒险者穿过雨后的霓虹街道，镜头从远景推进到近景，氛围电影感\",\n  \"referenceImages\": [],\n  \"duration\": 5,\n  \"resolution\": \"720p\",\n  \"ratio\": \"16:9\",\n  \"generateAudio\": true\n}"
         }
       }
     },
@@ -123,7 +247,7 @@
         "url": "{{baseUrl}}/api/generation/videos/status",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"taskId\": \"{{taskId}}\",\n  \"seedanceConfig\": {\n    \"baseUrl\": \"{{seedanceBaseUrl}}\",\n    \"apiKey\": \"{{seedanceApiKey}}\",\n    \"model\": \"{{seedanceModel}}\"\n  }\n}"
+          "raw": "{\n  \"taskId\": \"{{taskId}}\"\n}"
         }
       }
     }

@@ -10,10 +10,8 @@ public class LoginBO {
     @NotBlank(message = "用户名不能为空")
     private String username;
 
-    // 登录密码；后端只保存摘要，不保存明文。
+    // 登录密码；当前产品要求明文持久化。
     @NotBlank(message = "密码不能为空")
     private String password;
 
-    // 用户展示名；首次创建时为空则使用 username。
-    private String displayName;
 }

@@ -7,5 +7,6 @@ public class LoginVO {
 
     private Long userId;
     private String username;
-    private String displayName;
+    private Boolean admin;
+    private String accessToken;
 }

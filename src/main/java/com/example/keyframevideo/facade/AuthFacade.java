@@ -1,14 +1,12 @@
 package com.example.keyframevideo.facade;
 
-import cn.hutool.core.util.StrUtil;
 import com.example.keyframevideo.bo.LoginBO;
+import com.example.keyframevideo.auth.JwtService;
+import com.example.keyframevideo.constants.AdminConstants;
 import com.example.keyframevideo.domain.UserInfo;
 import com.example.keyframevideo.exception.BusinessException;
 import com.example.keyframevideo.service.UserService;
 import com.example.keyframevideo.vo.LoginVO;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.HexFormat;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
@@ -19,42 +17,34 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AuthFacade {
 
-    private static final String PASSWORD_SALT = "keyframe-video-studio";
-
     private final UserService userService;
+    private final JwtService jwtService;
 
     @Transactional(rollbackFor = Exception.class)
     public LoginVO loginOrCreate(LoginBO loginBO) {
         String username = loginBO.getUsername().trim();
-        String passwordHash = hashPassword(loginBO.getPassword());
-        UserInfo existingUser = userService.getByUsername(username);
-        if (existingUser != null) {
-            if (!Objects.equals(passwordHash, existingUser.getPasswordHash())) {
-                throw new BusinessException("用户名或密码错误");
-            }
-            return toVO(existingUser);
-        }
-
-        UserInfo userInfo = new UserInfo();
-        userInfo.setUsername(username);
-        userInfo.setDisplayName(StrUtil.isNotBlank(loginBO.getDisplayName()) ? loginBO.getDisplayName().trim() : username);
-        userInfo.setPasswordHash(passwordHash);
+        String password = loginBO.getPassword();
         try {
-            // 首次登录自动创建用户，只持久化用户身份信息，不保存任何厂商 api-key。
+            UserInfo existingUser = userService.getByUsername(username);
+            if (existingUser != null) {
+                if (!Objects.equals(password, existingUser.getPassword())) {
+                    throw new BusinessException("用户名或密码错误");
+                }
+                return toVO(existingUser);
+            }
+
+            UserInfo userInfo = new UserInfo();
+            userInfo.setUsername(username);
+            userInfo.setDisplayName(username);
+            userInfo.setPassword(password);
+            userInfo.setAdmin(AdminConstants.INITIAL_ADMIN_USERNAME.equals(username));
+            userInfo.setImageCallLimit(AdminConstants.DEFAULT_IMAGE_CALL_LIMIT);
+            userInfo.setVideoCallLimit(AdminConstants.DEFAULT_VIDEO_CALL_LIMIT);
+            // 首次登录自动创建用户，按当前产品要求明文保存密码，不保存任何厂商 api-key。
             userService.save(userInfo);
+            return toVO(userInfo);
         } catch (DuplicateKeyException ex) {
             throw new BusinessException("用户名已被占用，请重新登录", ex);
-        }
-        return toVO(userService.getByUsername(username));
-    }
-
-    private String hashPassword(String password) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest((PASSWORD_SALT + ":" + password).getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(bytes);
-        } catch (Exception ex) {
-            throw new BusinessException("密码处理失败", ex);
         }
     }
 
@@ -62,7 +52,8 @@ public class AuthFacade {
         LoginVO loginVO = new LoginVO();
         loginVO.setUserId(userInfo.getId());
         loginVO.setUsername(userInfo.getUsername());
-        loginVO.setDisplayName(userInfo.getDisplayName());
+        loginVO.setAdmin(AdminConstants.INITIAL_ADMIN_USERNAME.equals(userInfo.getUsername()));
+        loginVO.setAccessToken(jwtService.createAccessToken(userInfo.getId(), userInfo.getUsername()));
         return loginVO;
     }
 }
