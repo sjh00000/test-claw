@@ -15,7 +15,7 @@ public interface GenerationTaskService extends IService<GenerationTask> {
 
     GenerationTask getRequiredVisibleTask(Long taskId, UserInfo userInfo);
 
-    List<GenerationTask> listVisibleTasks(UserInfo userInfo, String username, String taskType, String status);
+    List<GenerationTask> listVisibleTaskSummaries(UserInfo userInfo, String username, String taskType, String status);
 
     void markRunning(Long taskId, String providerTaskId);
 

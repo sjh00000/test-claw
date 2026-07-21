@@ -64,3 +64,16 @@ generation:
     model: ${SEEDANCE_MODEL:}
     # 后端建议轮询间隔，保留给后续前端动态读取。
     poll-interval-seconds: ${SEEDANCE_POLL_INTERVAL_SECONDS:15}
+  oss:
+    # OSS SDK 上传 Endpoint，不带 bucket 名。
+    endpoint: ${ALIYUN_OSS_ENDPOINT:https://oss-cn-chengdu.aliyuncs.com}
+    # OSS AccessKeyId，由部署环境配置。
+    access-key-id: ${ALIYUN_OSS_ACCESS_KEY_ID:}
+    # OSS AccessKeySecret 必须通过部署环境配置，禁止写死。
+    access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET:}
+    # OSS 存储空间名称。
+    bucket-name: ${ALIYUN_OSS_BUCKET_NAME:videos-sun}
+    # OSS Bucket 域名，用于保存可访问结果地址。
+    bucket-domain: ${ALIYUN_OSS_BUCKET_DOMAIN:https://videos-sun.oss-cn-chengdu.aliyuncs.com}
+    # 生成结果在 OSS 中的统一目录前缀。
+    object-prefix: ${ALIYUN_OSS_OBJECT_PREFIX:test-claw}

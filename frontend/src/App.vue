@@ -114,6 +114,7 @@ const adminUsers = ref([])
 const operationLogs = ref([])
 const modelConfigs = ref([])
 const generationTasks = ref([])
+const taskDownloadingId = ref(null)
 
 const isLoggedIn = computed(() => Boolean(user.value?.userId && user.value?.accessToken))
 const isAdmin = computed(() => Boolean(user.value?.admin))
@@ -365,6 +366,40 @@ function downloadUrl(url, filename) {
   link.remove()
 }
 
+function canDownloadTask(item) {
+  return String(item?.status || '').toUpperCase() === 'SUCCEEDED'
+}
+
+function taskResultText(item) {
+  if (item.failReason) {
+    return item.failReason
+  }
+  if (canDownloadTask(item)) {
+    return item.taskType === 'TEXT_TO_IMAGE' ? '图片已生成' : '视频已生成'
+  }
+  return '等待生成'
+}
+
+async function downloadTaskResult(item) {
+  if (!canDownloadTask(item) || taskDownloadingId.value) {
+    return
+  }
+  taskDownloadingId.value = item.taskId
+  adminMessage.value = ''
+  try {
+    const detail = await queryTaskStatus({ taskId: item.taskId })
+    if (!detail?.resultUrl) {
+      adminMessage.value = '任务结果暂不可下载'
+      return
+    }
+    downloadUrl(detail.resultUrl, item.taskType === 'TEXT_TO_IMAGE' ? 'generated-image.png' : 'generated-video.mp4')
+  } catch (error) {
+    adminMessage.value = error.message
+  } finally {
+    taskDownloadingId.value = null
+  }
+}
+
 async function openPage(page) {
   currentPage.value = page
   errorMessage.value = ''
@@ -454,16 +489,6 @@ async function refreshTaskCenterIfOpen() {
   if (currentPage.value === 'tasks') {
     await fetchGenerationTasks()
   }
-}
-
-function taskResultKind(item) {
-  if (item.taskType === 'TEXT_TO_IMAGE') {
-    return 'image'
-  }
-  if (item.taskType === 'TEXT_TO_VIDEO') {
-    return 'video'
-  }
-  return 'file'
 }
 
 async function fetchModelConfigs() {
@@ -783,6 +808,10 @@ onBeforeUnmount(() => {
             <div class="admin-toolbar">
               <input v-model.trim="userSearch.keyword" type="text" placeholder="搜索用户名" />
               <button class="secondary-action" type="button" :disabled="adminLoading" @click="fetchAdminUsers">查询</button>
+              <button class="secondary-action icon-action" type="button" :disabled="adminLoading" @click="fetchAdminUsers">
+                <RefreshCw :size="16" />
+                刷新
+              </button>
             </div>
           </div>
           <p v-if="adminMessage" class="hint-message">{{ adminMessage }}</p>
@@ -828,6 +857,10 @@ onBeforeUnmount(() => {
                 <option value="FAILED">生成失败</option>
               </select>
               <button class="secondary-action" type="button" :disabled="adminLoading" @click="fetchGenerationTasks">筛选</button>
+              <button class="secondary-action icon-action" type="button" :disabled="adminLoading" @click="fetchGenerationTasks">
+                <RefreshCw :size="16" />
+                刷新
+              </button>
             </div>
           </div>
           <p v-if="adminMessage" class="hint-message">{{ adminMessage }}</p>
@@ -846,18 +879,16 @@ onBeforeUnmount(() => {
               <span>{{ item.taskName }}</span>
               <span>{{ item.statusName || item.status }}</span>
               <span class="result-cell">
-                <img v-if="item.resultUrl && taskResultKind(item) === 'image'" :src="item.resultUrl" alt="任务图片结果" />
-                <video v-else-if="item.resultUrl && taskResultKind(item) === 'video'" :src="item.resultUrl" muted />
-                <span v-else>{{ item.failReason || '等待生成' }}</span>
+                <span>{{ taskResultText(item) }}</span>
               </span>
               <button
                 class="secondary-action"
                 type="button"
-                :disabled="!item.resultUrl"
-                @click="downloadUrl(item.resultUrl, item.taskType === 'TEXT_TO_IMAGE' ? 'generated-image.png' : 'generated-video.mp4')"
+                :disabled="!canDownloadTask(item) || taskDownloadingId === item.taskId"
+                @click="downloadTaskResult(item)"
               >
                 <Download :size="16" />
-                下载
+                {{ taskDownloadingId === item.taskId ? '准备中' : '下载' }}
               </button>
             </div>
           </div>
@@ -882,6 +913,10 @@ onBeforeUnmount(() => {
                 <option value="TEXT_TO_VIDEO">文生视频</option>
               </select>
               <button class="secondary-action" type="button" :disabled="adminLoading" @click="fetchOperationLogs">筛选</button>
+              <button class="secondary-action icon-action" type="button" :disabled="adminLoading" @click="fetchOperationLogs">
+                <RefreshCw :size="16" />
+                刷新
+              </button>
             </div>
           </div>
           <p v-if="adminMessage" class="hint-message">{{ adminMessage }}</p>
@@ -914,7 +949,10 @@ onBeforeUnmount(() => {
                 <h2>服务参数</h2>
               </div>
             </div>
-            <button class="secondary-action" type="button" :disabled="adminLoading" @click="fetchModelConfigs">刷新</button>
+            <button class="secondary-action icon-action" type="button" :disabled="adminLoading" @click="fetchModelConfigs">
+              <RefreshCw :size="16" />
+              刷新
+            </button>
           </div>
           <p v-if="adminMessage" class="hint-message">{{ adminMessage }}</p>
           <div class="model-config-grid">

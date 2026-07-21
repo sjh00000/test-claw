@@ -1,6 +1,7 @@
 package com.example.keyframevideo.service.impl;
 
 import cn.hutool.core.util.StrUtil;
+import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.keyframevideo.constants.AdminConstants;
@@ -101,16 +102,35 @@ public class GenerationTaskServiceImpl extends ServiceImpl<GenerationTaskMapper,
     }
 
     @Override
-    public List<GenerationTask> listVisibleTasks(UserInfo userInfo, String username, String taskType, String status) {
+    public List<GenerationTask> listVisibleTaskSummaries(UserInfo userInfo, String username, String taskType, String status) {
+        // 任务列表只展示元信息，不查询 result_url/response_body/request_body，避免图片 base64 大字段拖慢接口和页面渲染。
+        return buildVisibleTaskQuery(userInfo, username, taskType, status)
+                .select(
+                        GenerationTask::getId,
+                        GenerationTask::getUserId,
+                        GenerationTask::getUsername,
+                        GenerationTask::getTaskType,
+                        GenerationTask::getProviderTaskId,
+                        GenerationTask::getStatus,
+                        GenerationTask::getFailReason,
+                        GenerationTask::getCreatedAt,
+                        GenerationTask::getUpdatedAt)
+                .page(new Page<>(1, 300))
+                .getRecords();
+    }
+
+    private LambdaQueryChainWrapper<GenerationTask> buildVisibleTaskQuery(
+            UserInfo userInfo,
+            String username,
+            String taskType,
+            String status) {
         boolean admin = isAdmin(userInfo);
         return lambdaQuery()
                 .eq(!admin, GenerationTask::getUserId, userInfo.getId())
                 .like(admin && StrUtil.isNotBlank(username), GenerationTask::getUsername, username)
                 .eq(StrUtil.isNotBlank(taskType), GenerationTask::getTaskType, taskType)
                 .eq(StrUtil.isNotBlank(status), GenerationTask::getStatus, status)
-                .orderByDesc(GenerationTask::getCreatedAt)
-                .page(new Page<>(1, 300))
-                .getRecords();
+                .orderByDesc(GenerationTask::getCreatedAt);
     }
 
     @Override

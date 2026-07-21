@@ -21,6 +21,7 @@ import com.example.keyframevideo.vo.ImageGenerationVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -59,7 +60,8 @@ public class GenerationAsyncFacade {
             generationTaskService.markFinished(taskId, GenerationTaskStatusEnum.SUCCEEDED, imageUrl, null, toJson(imageGenerationVO));
             log.info("文生图异步任务完成，userId={}, taskId={}, referenceImageCount={}", userId, taskId, referenceImages.size());
         } catch (RuntimeException ex) {
-            generationTaskService.markFinished(taskId, GenerationTaskStatusEnum.FAILED, null, sanitizeFailure(ex.getMessage()), null);
+            generationTaskService.markFinished(taskId, GenerationTaskStatusEnum.FAILED,
+                    null, sanitizeFailure(ex.getMessage()), buildFailureResponse(ex));
             log.warn("文生图异步任务失败，userId={}, taskId={}, reason={}", userId, taskId, ex.getMessage());
         }
     }
@@ -83,7 +85,8 @@ public class GenerationAsyncFacade {
             log.info("文生视频异步任务已提交厂商，userId={}, taskId={}, providerTaskId={}, referenceImageCount={}",
                     userId, taskId, providerTaskId, referenceImages.size());
         } catch (RuntimeException ex) {
-            generationTaskService.markFinished(taskId, GenerationTaskStatusEnum.FAILED, null, sanitizeFailure(ex.getMessage()), null);
+            generationTaskService.markFinished(taskId, GenerationTaskStatusEnum.FAILED,
+                    null, sanitizeFailure(ex.getMessage()), buildFailureResponse(ex));
             log.warn("文生视频异步任务提交失败，userId={}, taskId={}, reason={}", userId, taskId, ex.getMessage());
         }
     }
@@ -142,5 +145,12 @@ public class GenerationAsyncFacade {
             return "生成失败";
         }
         return message.length() > 1024 ? message.substring(0, 1024) : message;
+    }
+
+    private String buildFailureResponse(RuntimeException ex) {
+        return toJson(Map.of(
+                "message", sanitizeFailure(ex.getMessage()),
+                "cause", ex.getCause() == null ? "" : sanitizeFailure(ex.getCause().getMessage())
+        ));
     }
 }

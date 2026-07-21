@@ -21,6 +21,8 @@
         <java.version>17</java.version>
         <hutool.version>5.8.27</hutool.version>
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
+        <aliyun-oss.version>3.18.5</aliyun-oss.version>
+        <jaxb.version>2.3.8</jaxb.version>
     </properties>
 
     <dependencies>
@@ -45,6 +47,16 @@
             <groupId>cn.hutool</groupId>
             <artifactId>hutool-core</artifactId>
             <version>${hutool.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.aliyun.oss</groupId>
+            <artifactId>aliyun-sdk-oss</artifactId>
+            <version>${aliyun-oss.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jaxb</groupId>
+            <artifactId>jaxb-runtime</artifactId>
+            <version>${jaxb.version}</version>
         </dependency>
         <dependency>
             <groupId>com.mysql</groupId>

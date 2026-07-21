@@ -89,7 +89,7 @@ public class GenerationFacade {
 
     public List<GenerationTaskVO> listTasks(GenerationTaskQueryBO queryBO) {
         UserInfo userInfo = loadCurrentUsableUser();
-        return generationTaskService.listVisibleTasks(
+        return generationTaskService.listVisibleTaskSummaries(
                         userInfo,
                         queryBO.getUsername(),
                         queryBO.getTaskType(),

@@ -8,6 +8,7 @@ import com.example.keyframevideo.bo.ProviderConfigBO;
 import com.example.keyframevideo.config.GenerationProperties;
 import com.example.keyframevideo.domain.ReferenceImage;
 import com.example.keyframevideo.exception.BusinessException;
+import com.example.keyframevideo.service.OssStorageService;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -44,6 +45,7 @@ public class ImageProviderClient {
     private final GenerationProperties properties;
     private final RestClient.Builder restClientBuilder;
     private final ObjectMapper objectMapper;
+    private final OssStorageService ossStorageService;
     private final ScheduledExecutorService imageCallMonitor = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "image-2-call-monitor");
         thread.setDaemon(true);
@@ -53,10 +55,12 @@ public class ImageProviderClient {
     public ImageProviderClient(
             GenerationProperties properties,
             RestClient.Builder restClientBuilder,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            OssStorageService ossStorageService) {
         this.properties = properties;
         this.restClientBuilder = restClientBuilder;
         this.objectMapper = objectMapper;
+        this.ossStorageService = ossStorageService;
     }
 
     public String generate(String prompt, List<ReferenceImage> referenceImages, String imageSize, String imageQuality, ProviderConfigBO providerConfigBO) {
@@ -103,6 +107,9 @@ public class ImageProviderClient {
             log.warn("gpt-image2 调用失败，httpStatus={}, responseBody={}",
                     ex.getStatusCode(), sanitizeRawResponseForLog(ex.getResponseBodyAsString()));
             throw new BusinessException("gpt-image2 调用失败", ex);
+        } catch (BusinessException ex) {
+            log.warn("gpt-image2 调用失败，reason={}", ex.getMessage());
+            throw ex;
         } catch (ResourceAccessException ex) {
             log.warn("gpt-image2 调用超时或网络不可达，timeoutSeconds={}, reason={}",
                     provider.getRequestTimeoutSeconds(), ex.getMessage());
@@ -157,6 +164,9 @@ public class ImageProviderClient {
             log.warn("image-2 主体参考图生成失败，httpStatus={}, responseBody={}",
                     ex.getStatusCode(), sanitizeRawResponseForLog(ex.getResponseBodyAsString()));
             throw new BusinessException("image-2 主体参考图生成失败", ex);
+        } catch (BusinessException ex) {
+            log.warn("image-2 主体参考图生成失败，reason={}", ex.getMessage());
+            throw ex;
         } catch (ResourceAccessException ex) {
             log.warn("image-2 主体参考图生成超时或网络不可达，timeoutSeconds={}, reason={}",
                     provider.getRequestTimeoutSeconds(), ex.getMessage());
@@ -277,9 +287,10 @@ public class ImageProviderClient {
     private String parseImageResponse(ClientHttpResponse clientResponse, String scene, Integer frameIndex) throws IOException {
         if (clientResponse.getStatusCode().isError()) {
             String responseBody = StreamUtils.copyToString(clientResponse.getBody(), StandardCharsets.UTF_8);
-            log.warn("{} 调用失败，frameIndex={}, httpStatus={}, responseBody={}",
-                    scene, frameIndex, clientResponse.getStatusCode(), sanitizeRawResponseForLog(responseBody));
-            throw new BusinessException(scene + "调用失败");
+            String providerMessage = extractProviderErrorMessage(responseBody);
+            log.warn("{} 调用失败，frameIndex={}, httpStatus={}, providerMessage={}, responseBody={}",
+                    scene, frameIndex, clientResponse.getStatusCode(), providerMessage, sanitizeRawResponseForLog(responseBody));
+            throw new BusinessException(scene + "调用失败：" + providerMessage);
         }
         try {
             // image-2 经常返回超长 b64_json；这里只流式扫描图片字段，避免把完整响应构造成 Map。
@@ -329,7 +340,14 @@ public class ImageProviderClient {
         String b64Json = parser.getValueAsString();
         log.info("{} 响应命中 b64_json，frameIndex={}, outputMode=base64, base64Length={}",
                 scene, frameIndex, b64Json.length());
-        return "data:image/png;base64," + b64Json;
+        try {
+            byte[] imageBytes = Base64.getDecoder().decode(b64Json.getBytes(StandardCharsets.UTF_8));
+            return ossStorageService.uploadGeneratedImage(imageBytes);
+        } catch (IllegalArgumentException ex) {
+            log.warn("{} base64 图片解码失败，frameIndex={}, base64Length={}, reason={}",
+                    scene, frameIndex, b64Json.length(), ex.getMessage());
+            throw new BusinessException(scene + "返回的 base64 图片格式不正确", ex);
+        }
     }
 
     private String buildPromptWithReferenceNames(String prompt, List<ReferenceImage> referenceImages) {
@@ -418,7 +436,33 @@ public class ImageProviderClient {
 
     private String sanitizeRawResponseForLog(String rawResponse) {
         String compact = rawResponse.replaceAll("\\s+", " ");
-        return compact.length() > 1000 ? compact.substring(0, 1000) + "..." : compact;
+        return compact.length() > 10000 ? compact.substring(0, 10000) + "..." : compact;
+    }
+
+    private String extractProviderErrorMessage(String responseBody) {
+        if (StrUtil.isBlank(responseBody)) {
+            return "厂商响应为空";
+        }
+        try {
+            Map<?, ?> response = objectMapper.readValue(responseBody, Map.class);
+            Object error = response.get("error");
+            if (error instanceof Map<?, ?> errorMap) {
+                String message = stringValue(errorMap.get("message"));
+                String code = stringValue(errorMap.get("code"));
+                return StrUtil.isNotBlank(code) ? code + "：" + message : message;
+            }
+            String message = stringValue(response.get("message"));
+            if (StrUtil.isNotBlank(message)) {
+                return message;
+            }
+        } catch (Exception ex) {
+            log.warn("image-2 错误响应解析失败，reason={}", ex.getMessage());
+        }
+        return sanitizeRawResponseForLog(responseBody);
+    }
+
+    private String stringValue(Object value) {
+        return value instanceof String text ? text : "";
     }
 
     private static class NamedByteArrayResource extends ByteArrayResource {

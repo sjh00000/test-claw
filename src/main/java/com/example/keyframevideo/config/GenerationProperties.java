@@ -9,6 +9,7 @@ public class GenerationProperties {
 
     private final ImageProvider imageProvider = new ImageProvider();
     private final Seedance seedance = new Seedance();
+    private final Oss oss = new Oss();
 
     @Data
     public static class ImageProvider {
@@ -41,5 +42,21 @@ public class GenerationProperties {
         // 建议轮询间隔，前端当前用 5 秒主动刷新，后续可由接口下发此值。
         private int pollIntervalSeconds = 15;
 
+    }
+
+    @Data
+    public static class Oss {
+        // OSS Endpoint 用于 SDK 上传，不带 bucket 名。
+        private String endpoint = "";
+        // OSS AccessKeyId，由部署环境配置。
+        private String accessKeyId = "";
+        // OSS AccessKeySecret，由部署环境配置，禁止写入代码或日志。
+        private String accessKeySecret = "";
+        // OSS 存储空间名称。
+        private String bucketName = "";
+        // OSS Bucket 访问域名，用于拼接数据库中保存的结果 URL。
+        private String bucketDomain = "";
+        // 生成结果在 OSS 中的统一目录前缀。
+        private String objectPrefix = "test-claw";
     }
 }
