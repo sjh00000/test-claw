@@ -19,18 +19,67 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class GenerationTaskServiceImpl extends ServiceImpl<GenerationTaskMapper, GenerationTask> implements GenerationTaskService {
 
+    // 前端会直接用任务 ID 轮询状态，因此这里把雪花 ID 压到 JS Number 安全整数范围内，避免精度丢失后查不到任务。
+    private static final long TASK_ID_EPOCH_MS = 1767225600000L;
+    private static final long WORKER_ID = 1L;
+    private static final long WORKER_ID_BITS = 4L;
+    private static final long SEQUENCE_BITS = 10L;
+    private static final long MAX_SEQUENCE = (1L << SEQUENCE_BITS) - 1;
+    private static final long WORKER_ID_SHIFT = SEQUENCE_BITS;
+    private static final long TIMESTAMP_SHIFT = WORKER_ID_BITS + SEQUENCE_BITS;
+    private static final long MAX_JS_SAFE_INTEGER = 9_007_199_254_740_991L;
+
+    private long lastTimestamp = -1L;
+    private long sequence = 0L;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public GenerationTask createSubmittedTask(UserInfo userInfo, OperationTypeEnum operationTypeEnum, String requestBody) {
         GenerationTask generationTask = new GenerationTask();
+        generationTask.setId(nextTaskId());
         generationTask.setUserId(userInfo.getId());
         generationTask.setUsername(userInfo.getUsername());
         generationTask.setTaskType(operationTypeEnum.getCode());
         generationTask.setStatus(GenerationTaskStatusEnum.SUBMITTED.getCode());
         generationTask.setRequestBody(requestBody);
-        // 任务先落库再异步调用厂商，前端拿本地任务 ID 轮询，避免长耗时请求阻塞页面。
+        // 任务先落库再异步调用厂商；任务 ID 使用 53 位以内的紧凑雪花算法，避免浏览器 Number 精度丢失。
         save(generationTask);
         return generationTask;
+    }
+
+    private synchronized long nextTaskId() {
+        long currentTimestamp = currentTimestamp();
+        if (currentTimestamp < lastTimestamp) {
+            throw new BusinessException("系统时钟回拨，任务创建失败");
+        }
+        if (currentTimestamp == lastTimestamp) {
+            sequence = (sequence + 1) & MAX_SEQUENCE;
+            if (sequence == 0) {
+                currentTimestamp = waitNextMillis(lastTimestamp);
+            }
+        } else {
+            sequence = 0L;
+        }
+        lastTimestamp = currentTimestamp;
+        long taskId = ((currentTimestamp - TASK_ID_EPOCH_MS) << TIMESTAMP_SHIFT)
+                | (WORKER_ID << WORKER_ID_SHIFT)
+                | sequence;
+        if (taskId > MAX_JS_SAFE_INTEGER) {
+            throw new BusinessException("任务 ID 超出前端安全整数范围");
+        }
+        return taskId;
+    }
+
+    private long waitNextMillis(long previousTimestamp) {
+        long currentTimestamp = currentTimestamp();
+        while (currentTimestamp <= previousTimestamp) {
+            currentTimestamp = currentTimestamp();
+        }
+        return currentTimestamp;
+    }
+
+    private long currentTimestamp() {
+        return System.currentTimeMillis();
     }
 
     @Override

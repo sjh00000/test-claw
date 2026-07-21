@@ -8,7 +8,6 @@ import com.example.keyframevideo.bo.ProviderConfigBO;
 import com.example.keyframevideo.config.GenerationProperties;
 import com.example.keyframevideo.domain.ReferenceImage;
 import com.example.keyframevideo.exception.BusinessException;
-import com.example.keyframevideo.service.GeneratedImageStorageService;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -45,7 +44,6 @@ public class ImageProviderClient {
     private final GenerationProperties properties;
     private final RestClient.Builder restClientBuilder;
     private final ObjectMapper objectMapper;
-    private final GeneratedImageStorageService generatedImageStorageService;
     private final ScheduledExecutorService imageCallMonitor = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "image-2-call-monitor");
         thread.setDaemon(true);
@@ -55,12 +53,10 @@ public class ImageProviderClient {
     public ImageProviderClient(
             GenerationProperties properties,
             RestClient.Builder restClientBuilder,
-            ObjectMapper objectMapper,
-            GeneratedImageStorageService generatedImageStorageService) {
+            ObjectMapper objectMapper) {
         this.properties = properties;
         this.restClientBuilder = restClientBuilder;
         this.objectMapper = objectMapper;
-        this.generatedImageStorageService = generatedImageStorageService;
     }
 
     public String generate(String prompt, List<ReferenceImage> referenceImages, String imageSize, String imageQuality, ProviderConfigBO providerConfigBO) {
@@ -208,7 +204,6 @@ public class ImageProviderClient {
         provider.setGenerationEndpoint(baseProvider.getGenerationEndpoint());
         provider.setSize(baseProvider.getSize());
         provider.setQuality(baseProvider.getQuality());
-        provider.setB64JsonOutputMode(baseProvider.getB64JsonOutputMode());
         provider.setRequestTimeoutSeconds(baseProvider.getRequestTimeoutSeconds());
         return provider;
     }
@@ -318,7 +313,7 @@ public class ImageProviderClient {
                     }
                 }
                 if ("b64_json".equals(fieldName)) {
-                    // 默认 URL 模式下直接把 b64_json 流式落盘；只有显式 base64 模式才返回 data URI。
+                    // 图片结果不在本地落盘，统一返回 data URL 并由任务表持久化，前端可直接预览和下载。
                     return convertB64JsonToImageUrl(parser, scene, frameIndex);
                 }
             }
@@ -330,23 +325,11 @@ public class ImageProviderClient {
         return "https://placehold.co/1024x1024/png?text=" + prompt.replace(" ", "+");
     }
 
-    private String convertB64JsonToImageUrl(String b64Json) {
-        if ("base64".equalsIgnoreCase(properties.getImageProvider().getB64JsonOutputMode())) {
-            log.info("b64_json 按 base64 模式返回，base64Length={}", b64Json.length());
-            return "data:image/png;base64," + b64Json;
-        }
-        return generatedImageStorageService.saveBase64Png(b64Json);
-    }
-
     private String convertB64JsonToImageUrl(com.fasterxml.jackson.core.JsonParser parser, String scene, Integer frameIndex) throws IOException {
-        if ("base64".equalsIgnoreCase(properties.getImageProvider().getB64JsonOutputMode())) {
-            String b64Json = parser.getValueAsString();
-            log.info("{} 响应命中 b64_json，frameIndex={}, outputMode=base64, base64Length={}",
-                    scene, frameIndex, b64Json.length());
-            return "data:image/png;base64," + b64Json;
-        }
-        log.info("{} 响应命中 b64_json，frameIndex={}, outputMode=url", scene, frameIndex);
-        return generatedImageStorageService.saveBase64Png(writer -> parser.getText(writer));
+        String b64Json = parser.getValueAsString();
+        log.info("{} 响应命中 b64_json，frameIndex={}, outputMode=base64, base64Length={}",
+                scene, frameIndex, b64Json.length());
+        return "data:image/png;base64," + b64Json;
     }
 
     private String buildPromptWithReferenceNames(String prompt, List<ReferenceImage> referenceImages) {

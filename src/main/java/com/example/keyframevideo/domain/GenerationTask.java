@@ -10,7 +10,7 @@ import lombok.Data;
 @TableName("generation_task")
 public class GenerationTask {
 
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.INPUT)
     private Long id;
     private Long userId;
     private String username;

@@ -31,16 +31,16 @@ CREATE TABLE IF NOT EXISTS operation_log (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS generation_task (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    id BIGINT PRIMARY KEY,
     user_id BIGINT NOT NULL,
     username VARCHAR(64) NOT NULL,
     task_type VARCHAR(64) NOT NULL,
     provider_task_id VARCHAR(128) NULL,
     status VARCHAR(32) NOT NULL,
-    result_url VARCHAR(1024) NULL,
+    result_url LONGTEXT NULL,
     fail_reason VARCHAR(1024) NULL,
     request_body TEXT NULL,
-    response_body TEXT NULL,
+    response_body LONGTEXT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_generation_task_user_id (user_id),

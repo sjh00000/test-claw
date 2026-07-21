@@ -9,7 +9,6 @@ public class GenerationProperties {
 
     private final ImageProvider imageProvider = new ImageProvider();
     private final Seedance seedance = new Seedance();
-    private final Assets assets = new Assets();
 
     @Data
     public static class ImageProvider {
@@ -27,8 +26,6 @@ public class GenerationProperties {
         private String size = "1024x1024";
         // image2 输出质量。
         private String quality = "medium";
-        // b64_json 输出模式：url=落盘后返回图片 URL；base64=直接返回 data:image/png;base64。
-        private String b64JsonOutputMode = "url";
         // image-2 单次调用超时时间，单位秒，超过后允许前端重新生成对应帧。
         private int requestTimeoutSeconds = 300;
     }
@@ -44,15 +41,5 @@ public class GenerationProperties {
         // 建议轮询间隔，前端当前用 5 秒主动刷新，后续可由接口下发此值。
         private int pollIntervalSeconds = 15;
 
-    }
-
-    @Data
-    public static class Assets {
-        // 模型返回 b64_json 时的本地图片保存目录，默认放在项目运行目录下。
-        private String imageDir = "generated-assets/images";
-        // 本地图片对外访问前缀，前端和 Seedance 会使用该 URL 访问图片。
-        private String imageUrlPrefix = "/assets/images";
-        // 对外访问基础地址；为空时按当前后端请求自动拼接，例如 http://localhost:8080。
-        private String publicBaseUrl = "";
     }
 }
