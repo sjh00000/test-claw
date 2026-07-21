@@ -10,6 +10,7 @@ public class ModelConfigVO {
     private String serviceType;
     private String serviceName;
     private String baseUrl;
+    private String apiKey;
     private String apiKeyMask;
     private String model;
     private Boolean enabled;

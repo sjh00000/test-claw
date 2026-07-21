@@ -52,6 +52,20 @@ export function queryVideoStatus(data) {
   })
 }
 
+export function queryTaskStatus(data) {
+  return request('/generation/tasks/status', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
+}
+
+export function listTasks(data) {
+  return request('/generation/tasks', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
+}
+
 export function listAdminUsers(data) {
   return request('/admin/users', {
     method: 'POST',

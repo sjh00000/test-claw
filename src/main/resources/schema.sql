@@ -4,8 +4,8 @@ CREATE TABLE IF NOT EXISTS app_user (
     display_name VARCHAR(64) NOT NULL,
     password VARCHAR(128) NOT NULL,
     admin TINYINT(1) NOT NULL DEFAULT 0,
-    image_call_limit INT NOT NULL DEFAULT 20,
-    video_call_limit INT NOT NULL DEFAULT 5,
+    image_remaining_count INT NOT NULL DEFAULT 20,
+    video_remaining_count INT NOT NULL DEFAULT 5,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -16,17 +16,31 @@ CREATE TABLE IF NOT EXISTS operation_log (
     username VARCHAR(64) NULL,
     operation_type VARCHAR(64) NOT NULL,
     operation_name VARCHAR(64) NOT NULL,
-    target_type VARCHAR(64) NULL,
-    target_id VARCHAR(128) NULL,
-    status VARCHAR(32) NOT NULL,
-    request_summary VARCHAR(1024) NULL,
-    response_summary VARCHAR(1024) NULL,
-    error_message VARCHAR(1024) NULL,
-    duration_ms BIGINT NULL,
+    request_body TEXT NULL,
+    response_body TEXT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_operation_log_user_id (user_id),
-    INDEX idx_operation_log_type_status (operation_type, status),
+    INDEX idx_operation_log_type (operation_type),
     INDEX idx_operation_log_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS generation_task (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    username VARCHAR(64) NOT NULL,
+    task_type VARCHAR(64) NOT NULL,
+    provider_task_id VARCHAR(128) NULL,
+    status VARCHAR(32) NOT NULL,
+    result_url VARCHAR(1024) NULL,
+    fail_reason VARCHAR(1024) NULL,
+    request_body TEXT NULL,
+    response_body TEXT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_generation_task_user_id (user_id),
+    INDEX idx_generation_task_type_status (task_type, status),
+    INDEX idx_generation_task_provider_task_id (provider_task_id),
+    INDEX idx_generation_task_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS model_config (

@@ -2,30 +2,30 @@ package com.example.keyframevideo.facade;
 
 import cn.hutool.core.util.StrUtil;
 import com.example.keyframevideo.auth.CurrentUserContext;
+import com.example.keyframevideo.bo.GenerationTaskQueryBO;
+import com.example.keyframevideo.bo.GenerationTaskStatusBO;
 import com.example.keyframevideo.bo.ProviderConfigBO;
-import com.example.keyframevideo.bo.ReferenceImageBO;
 import com.example.keyframevideo.bo.TextToImageBO;
 import com.example.keyframevideo.bo.TextToVideoBO;
 import com.example.keyframevideo.bo.VideoStatusBO;
-import com.example.keyframevideo.client.ImageProviderClient;
 import com.example.keyframevideo.client.SeedanceClient;
+import com.example.keyframevideo.domain.GenerationTask;
+import com.example.keyframevideo.domain.GenerationTaskStatusEnum;
 import com.example.keyframevideo.domain.ModelConfig;
-import com.example.keyframevideo.domain.OperationLog;
-import com.example.keyframevideo.domain.OperationLogStatusEnum;
 import com.example.keyframevideo.domain.OperationTypeEnum;
-import com.example.keyframevideo.domain.ReferenceImage;
 import com.example.keyframevideo.domain.SeedanceTaskStatus;
 import com.example.keyframevideo.domain.ServiceTypeEnum;
 import com.example.keyframevideo.domain.UserInfo;
 import com.example.keyframevideo.exception.BusinessException;
+import com.example.keyframevideo.service.GenerationTaskService;
 import com.example.keyframevideo.service.ModelConfigService;
-import com.example.keyframevideo.service.OperationLogService;
+import com.example.keyframevideo.vo.GenerationTaskVO;
 import com.example.keyframevideo.vo.ImageGenerationVO;
 import com.example.keyframevideo.vo.VideoGenerationVO;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,90 +35,106 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class GenerationFacade {
 
-    private final ImageProviderClient imageProviderClient;
     private final SeedanceClient seedanceClient;
-    private final OperationLogService operationLogService;
+    private final GenerationTaskService generationTaskService;
     private final ModelConfigService modelConfigService;
+    private final GenerationAsyncFacade generationAsyncFacade;
+    private final ObjectMapper objectMapper;
 
     public ImageGenerationVO generateImage(TextToImageBO textToImageBO) {
-        Instant startedAt = Instant.now();
-        int referenceImageCount = textToImageBO.getReferenceImages().size();
         UserInfo userInfo = loadCurrentUsableUser();
-        try {
-            validateImageOptions(textToImageBO.getImageSize(), textToImageBO.getImageQuality());
-            assertCallLimit(userInfo, OperationTypeEnum.TEXT_TO_IMAGE, resolveImageLimit(userInfo));
-            ProviderConfigBO providerConfigBO = buildProviderConfig(ServiceTypeEnum.IMAGE);
-            List<ReferenceImage> referenceImages = buildReferenceImages(textToImageBO.getReferenceImages());
-            // 文生图与文生视频完全解耦：本接口只返回图片结果，不创建会话也不触发视频流程。
-            String imageUrl = imageProviderClient.generate(
-                    textToImageBO.getPrompt().trim(),
-                    referenceImages,
-                    textToImageBO.getImageSize(),
-                    textToImageBO.getImageQuality(),
-                    providerConfigBO);
-            ImageGenerationVO imageGenerationVO = new ImageGenerationVO();
-            imageGenerationVO.setImageUrl(imageUrl);
-            recordGenerationOperation(userInfo, OperationTypeEnum.TEXT_TO_IMAGE,
-                    OperationLogStatusEnum.SUCCESS, "IMAGE", null,
-                    buildImageRequestSummary(textToImageBO, referenceImages.size()),
-                    "imageUrl=" + sanitizeForSummary(imageUrl), null, startedAt);
-            log.info("文生图完成，userId={}, referenceImageCount={}", userInfo.getId(), referenceImages.size());
-            return imageGenerationVO;
-        } catch (RuntimeException ex) {
-            recordGenerationOperation(userInfo, OperationTypeEnum.TEXT_TO_IMAGE,
-                    OperationLogStatusEnum.FAILURE, "IMAGE", null,
-                    buildImageRequestSummary(textToImageBO, referenceImageCount),
-                    null, ex.getMessage(), startedAt);
-            throw ex;
-        }
+        validateImageOptions(textToImageBO.getImageSize(), textToImageBO.getImageQuality());
+        assertRemainingCount(userInfo, OperationTypeEnum.TEXT_TO_IMAGE, resolveImageRemainingCount(userInfo));
+        GenerationTask generationTask = generationTaskService.createSubmittedTask(
+                userInfo,
+                OperationTypeEnum.TEXT_TO_IMAGE,
+                toJson(sanitizeForStorage(textToImageBO)));
+        generationAsyncFacade.generateImageAsync(generationTask.getId(), userInfo.getId(), textToImageBO);
+
+        ImageGenerationVO imageGenerationVO = new ImageGenerationVO();
+        imageGenerationVO.setTaskId(generationTask.getId());
+        imageGenerationVO.setStatus(generationTask.getStatus());
+        log.info("文生图任务已创建，userId={}, taskId={}", userInfo.getId(), generationTask.getId());
+        return imageGenerationVO;
     }
 
     public VideoGenerationVO generateVideo(TextToVideoBO textToVideoBO) {
-        Instant startedAt = Instant.now();
-        int referenceImageCount = textToVideoBO.getReferenceImages().size();
         UserInfo userInfo = loadCurrentUsableUser();
-        try {
-            validateVideoOptions(textToVideoBO);
-            assertCallLimit(userInfo, OperationTypeEnum.TEXT_TO_VIDEO, resolveVideoLimit(userInfo));
-            ProviderConfigBO providerConfigBO = buildProviderConfig(ServiceTypeEnum.VIDEO);
-            List<ReferenceImage> referenceImages = buildReferenceImages(textToVideoBO.getReferenceImages());
-            // 文生视频直接提交 Seedance；参考图为空时按纯文本生成，有参考图时作为多模态参考输入。
-            String taskId = seedanceClient.submit(
-                    textToVideoBO.getPrompt().trim(),
-                    referenceImages,
-                    textToVideoBO.getDuration(),
-                    textToVideoBO.getResolution(),
-                    textToVideoBO.getRatio(),
-                    textToVideoBO.isGenerateAudio(),
-                    providerConfigBO);
-            VideoGenerationVO videoGenerationVO = new VideoGenerationVO();
-            videoGenerationVO.setTaskId(taskId);
-            videoGenerationVO.setStatus("SUBMITTED");
-            recordGenerationOperation(userInfo, OperationTypeEnum.TEXT_TO_VIDEO,
-                    OperationLogStatusEnum.SUCCESS, "VIDEO_TASK", taskId,
-                    buildVideoRequestSummary(textToVideoBO, referenceImages.size()),
-                    "taskId=" + taskId + ", status=SUBMITTED", null, startedAt);
-            log.info("文生视频任务已提交，userId={}, taskId={}, referenceImageCount={}",
-                    userInfo.getId(), taskId, referenceImages.size());
-            return videoGenerationVO;
-        } catch (RuntimeException ex) {
-            recordGenerationOperation(userInfo, OperationTypeEnum.TEXT_TO_VIDEO,
-                    OperationLogStatusEnum.FAILURE, "VIDEO_TASK", null,
-                    buildVideoRequestSummary(textToVideoBO, referenceImageCount),
-                    null, ex.getMessage(), startedAt);
-            throw ex;
-        }
+        validateVideoOptions(textToVideoBO);
+        assertRemainingCount(userInfo, OperationTypeEnum.TEXT_TO_VIDEO, resolveVideoRemainingCount(userInfo));
+        GenerationTask generationTask = generationTaskService.createSubmittedTask(
+                userInfo,
+                OperationTypeEnum.TEXT_TO_VIDEO,
+                toJson(sanitizeForStorage(textToVideoBO)));
+        generationAsyncFacade.submitVideoAsync(generationTask.getId(), userInfo.getId(), textToVideoBO);
+
+        VideoGenerationVO videoGenerationVO = new VideoGenerationVO();
+        videoGenerationVO.setTaskId(generationTask.getId());
+        videoGenerationVO.setStatus(generationTask.getStatus());
+        log.info("文生视频任务已创建，userId={}, taskId={}", userInfo.getId(), generationTask.getId());
+        return videoGenerationVO;
     }
 
     public VideoGenerationVO queryVideoStatus(VideoStatusBO videoStatusBO) {
-        loadCurrentUsableUser();
-        SeedanceTaskStatus taskStatus = seedanceClient.query(videoStatusBO.getTaskId(), buildProviderConfig(ServiceTypeEnum.VIDEO));
+        GenerationTask generationTask = refreshAndLoadTask(videoStatusBO.getTaskId());
+        if (!OperationTypeEnum.TEXT_TO_VIDEO.getCode().equals(generationTask.getTaskType())) {
+            throw new BusinessException("该任务不是视频任务");
+        }
+        return toVideoGenerationVO(generationTask);
+    }
+
+    public GenerationTaskVO queryTaskStatus(GenerationTaskStatusBO taskStatusBO) {
+        return toTaskVO(refreshAndLoadTask(taskStatusBO.getTaskId()));
+    }
+
+    public List<GenerationTaskVO> listTasks(GenerationTaskQueryBO queryBO) {
+        UserInfo userInfo = loadCurrentUsableUser();
+        return generationTaskService.listVisibleTasks(
+                        userInfo,
+                        queryBO.getUsername(),
+                        queryBO.getTaskType(),
+                        queryBO.getStatus())
+                .stream()
+                .map(this::toTaskVO)
+                .toList();
+    }
+
+    private GenerationTask refreshAndLoadTask(Long taskId) {
+        UserInfo userInfo = loadCurrentUsableUser();
+        GenerationTask generationTask = generationTaskService.getRequiredVisibleTask(taskId, userInfo);
+        refreshVideoTaskIfNecessary(generationTask);
+        return generationTaskService.getRequiredVisibleTask(taskId, userInfo);
+    }
+
+    private void refreshVideoTaskIfNecessary(GenerationTask generationTask) {
+        if (!OperationTypeEnum.TEXT_TO_VIDEO.getCode().equals(generationTask.getTaskType())
+                || StrUtil.isBlank(generationTask.getProviderTaskId())
+                || isTerminalStatus(generationTask.getStatus())) {
+            return;
+        }
+
+        SeedanceTaskStatus taskStatus = seedanceClient.query(generationTask.getProviderTaskId(), buildProviderConfig(ServiceTypeEnum.VIDEO));
+        GenerationTaskStatusEnum statusEnum = GenerationTaskStatusEnum.normalize(
+                taskStatus.getStatus(),
+                taskStatus.getVideoUrl(),
+                taskStatus.getFailReason());
+        if (GenerationTaskStatusEnum.RUNNING.equals(statusEnum)) {
+            generationTaskService.markRunning(generationTask.getId(), generationTask.getProviderTaskId());
+            return;
+        }
         VideoGenerationVO videoGenerationVO = new VideoGenerationVO();
-        videoGenerationVO.setTaskId(taskStatus.getTaskId());
-        videoGenerationVO.setStatus(taskStatus.getStatus());
+        videoGenerationVO.setTaskId(generationTask.getId());
+        videoGenerationVO.setProviderTaskId(generationTask.getProviderTaskId());
+        videoGenerationVO.setStatus(statusEnum.getCode());
         videoGenerationVO.setVideoUrl(taskStatus.getVideoUrl());
         videoGenerationVO.setFailReason(taskStatus.getFailReason());
-        return videoGenerationVO;
+        // 视频厂商状态只有在前端轮询本地任务时刷新，任务表保存最终状态和可下载地址。
+        generationTaskService.markFinished(
+                generationTask.getId(),
+                statusEnum,
+                taskStatus.getVideoUrl(),
+                taskStatus.getFailReason(),
+                toJson(videoGenerationVO));
     }
 
     private void validateImageOptions(String imageSize, String imageQuality) {
@@ -149,19 +165,18 @@ public class GenerationFacade {
         return providerConfigBO;
     }
 
-    private void assertCallLimit(UserInfo userInfo, OperationTypeEnum operationTypeEnum, int callLimit) {
-        long usedCount = operationLogService.countSuccess(userInfo.getId(), operationTypeEnum.getCode());
-        if (usedCount >= callLimit) {
-            throw new BusinessException(operationTypeEnum.getDesc() + "总调用次数已达上限");
+    private void assertRemainingCount(UserInfo userInfo, OperationTypeEnum operationTypeEnum, int remainingCount) {
+        if (remainingCount <= 0) {
+            throw new BusinessException(operationTypeEnum.getDesc() + "剩余次数不足");
         }
     }
 
-    private int resolveImageLimit(UserInfo userInfo) {
-        return userInfo.getImageCallLimit() == null ? 0 : userInfo.getImageCallLimit();
+    private int resolveImageRemainingCount(UserInfo userInfo) {
+        return userInfo.getImageRemainingCount() == null ? 0 : userInfo.getImageRemainingCount();
     }
 
-    private int resolveVideoLimit(UserInfo userInfo) {
-        return userInfo.getVideoCallLimit() == null ? 0 : userInfo.getVideoCallLimit();
+    private int resolveVideoRemainingCount(UserInfo userInfo) {
+        return userInfo.getVideoRemainingCount() == null ? 0 : userInfo.getVideoRemainingCount();
     }
 
     private void validateVideoOptions(TextToVideoBO textToVideoBO) {
@@ -176,72 +191,64 @@ public class GenerationFacade {
         }
     }
 
-    private List<ReferenceImage> buildReferenceImages(List<ReferenceImageBO> referenceImageBOList) {
-        List<ReferenceImage> referenceImages = new ArrayList<>();
-        for (int index = 0; index < referenceImageBOList.size(); index++) {
-            ReferenceImageBO referenceImageBO = referenceImageBOList.get(index);
-            if (StrUtil.isBlank(referenceImageBO.getImageUrl())) {
-                throw new BusinessException("参考图地址不能为空");
-            }
-            ReferenceImage referenceImage = new ReferenceImage();
-            referenceImage.setImageUrl(referenceImageBO.getImageUrl());
-            referenceImage.setName(StrUtil.isNotBlank(referenceImageBO.getName())
-                    ? referenceImageBO.getName().trim()
-                    : "参考图" + (index + 1));
-            referenceImages.add(referenceImage);
+    private GenerationTaskVO toTaskVO(GenerationTask generationTask) {
+        GenerationTaskVO generationTaskVO = new GenerationTaskVO();
+        generationTaskVO.setTaskId(generationTask.getId());
+        generationTaskVO.setUserId(generationTask.getUserId());
+        generationTaskVO.setUsername(generationTask.getUsername());
+        generationTaskVO.setTaskType(generationTask.getTaskType());
+        generationTaskVO.setTaskName(OperationTypeEnum.getDescByCode(generationTask.getTaskType()));
+        generationTaskVO.setProviderTaskId(generationTask.getProviderTaskId());
+        generationTaskVO.setStatus(generationTask.getStatus());
+        generationTaskVO.setStatusName(GenerationTaskStatusEnum.getDescByCode(generationTask.getStatus()));
+        generationTaskVO.setResultUrl(generationTask.getResultUrl());
+        generationTaskVO.setFailReason(generationTask.getFailReason());
+        generationTaskVO.setCreatedAt(generationTask.getCreatedAt());
+        generationTaskVO.setUpdatedAt(generationTask.getUpdatedAt());
+        return generationTaskVO;
+    }
+
+    private VideoGenerationVO toVideoGenerationVO(GenerationTask generationTask) {
+        VideoGenerationVO videoGenerationVO = new VideoGenerationVO();
+        videoGenerationVO.setTaskId(generationTask.getId());
+        videoGenerationVO.setProviderTaskId(generationTask.getProviderTaskId());
+        videoGenerationVO.setStatus(generationTask.getStatus());
+        videoGenerationVO.setVideoUrl(generationTask.getResultUrl());
+        videoGenerationVO.setFailReason(generationTask.getFailReason());
+        return videoGenerationVO;
+    }
+
+    private boolean isTerminalStatus(String status) {
+        return GenerationTaskStatusEnum.SUCCEEDED.getCode().equals(status)
+                || GenerationTaskStatusEnum.FAILED.getCode().equals(status)
+                || GenerationTaskStatusEnum.CANCELED.getCode().equals(status);
+    }
+
+    private Object sanitizeForStorage(Object value) {
+        Object jsonValue = objectMapper.convertValue(value, Object.class);
+        return sanitizeJsonValue(jsonValue);
+    }
+
+    private Object sanitizeJsonValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> sanitizedMap = new LinkedHashMap<>();
+            map.forEach((key, itemValue) -> sanitizedMap.put(String.valueOf(key), sanitizeJsonValue(itemValue)));
+            return sanitizedMap;
         }
-        return referenceImages;
-    }
-
-    private String buildImageRequestSummary(TextToImageBO textToImageBO, int referenceImageCount) {
-        return "promptLength=" + textToImageBO.getPrompt().trim().length()
-                + ", imageSize=" + textToImageBO.getImageSize()
-                + ", imageQuality=" + textToImageBO.getImageQuality()
-                + ", referenceImageCount=" + referenceImageCount;
-    }
-
-    private String buildVideoRequestSummary(TextToVideoBO textToVideoBO, int referenceImageCount) {
-        return "promptLength=" + textToVideoBO.getPrompt().trim().length()
-                + ", duration=" + textToVideoBO.getDuration()
-                + ", resolution=" + textToVideoBO.getResolution()
-                + ", ratio=" + textToVideoBO.getRatio()
-                + ", generateAudio=" + textToVideoBO.isGenerateAudio()
-                + ", referenceImageCount=" + referenceImageCount;
-    }
-
-    private void recordGenerationOperation(
-            UserInfo userInfo,
-            OperationTypeEnum operationType,
-            OperationLogStatusEnum status,
-            String targetType,
-            String targetId,
-            String requestSummary,
-            String responseSummary,
-            String errorMessage,
-            Instant startedAt) {
-        OperationLog operationLog = new OperationLog();
-        operationLog.setUserId(userInfo.getId());
-        operationLog.setUsername(userInfo.getUsername());
-        operationLog.setOperationType(operationType.getCode());
-        operationLog.setOperationName(operationType.getDesc());
-        operationLog.setTargetType(targetType);
-        operationLog.setTargetId(targetId);
-        operationLog.setStatus(status.getCode());
-        operationLog.setRequestSummary(requestSummary);
-        operationLog.setResponseSummary(responseSummary);
-        operationLog.setErrorMessage(sanitizeForSummary(errorMessage));
-        operationLog.setDurationMs(Duration.between(startedAt, Instant.now()).toMillis());
-        // 生成类操作涉及外部厂商调用，成功和失败都独立落审计表，便于按用户和任务排查。
-        operationLogService.record(operationLog);
-    }
-
-    private String sanitizeForSummary(String value) {
-        if (StrUtil.isBlank(value)) {
-            return value;
+        if (value instanceof List<?> list) {
+            return list.stream().map(this::sanitizeJsonValue).toList();
         }
-        if (value.startsWith("data:image/")) {
-            return "data:image/*;base64,<length=" + value.length() + ">";
+        if (value instanceof String text && text.startsWith("data:image/")) {
+            return "data:image/*;base64,<length=" + text.length() + ">";
         }
-        return value.length() > 500 ? value.substring(0, 500) : value;
+        return value;
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception ex) {
+            return String.valueOf(value);
+        }
     }
 }

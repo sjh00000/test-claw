@@ -7,17 +7,20 @@ import java.time.Instant;
 import lombok.Data;
 
 @Data
-@TableName("app_user")
-public class UserInfo {
+@TableName("generation_task")
+public class GenerationTask {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+    private Long userId;
     private String username;
-    private String displayName;
-    private String password;
-    private Boolean admin;
-    private Integer imageRemainingCount;
-    private Integer videoRemainingCount;
+    private String taskType;
+    private String providerTaskId;
+    private String status;
+    private String resultUrl;
+    private String failReason;
+    private String requestBody;
+    private String responseBody;
     private Instant createdAt;
     private Instant updatedAt;
 }

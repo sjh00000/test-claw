@@ -161,9 +161,9 @@ h3 {
 
 .auth-card {
   display: grid;
-  grid-template-columns: 1fr;
-  width: min(520px, 100%);
-  min-height: 420px;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.15fr);
+  width: min(1120px, 100%);
+  min-height: 620px;
   overflow: hidden;
 }
 
@@ -176,6 +176,62 @@ h3 {
   align-content: center;
   padding: clamp(28px, 5vw, 70px);
   background: #fff;
+}
+
+.showcase-panel {
+  position: relative;
+  min-height: 100%;
+  overflow: hidden;
+  background: #87cfe8;
+}
+
+.showcase-panel::before {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  background:
+    linear-gradient(180deg, rgba(9, 32, 54, 0.02), rgba(7, 24, 42, 0.28)),
+    url("https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=1200&q=84") center / cover;
+  filter: saturate(1.08) brightness(1.04);
+  transform: scale(1.02);
+  transition: transform 760ms cubic-bezier(0.22, 1, 0.36, 1), filter 760ms ease;
+  animation: visualFloat 18s ease-in-out infinite alternate;
+}
+
+.showcase-panel:hover::before {
+  animation-play-state: paused;
+  filter: saturate(1.14) brightness(1.07);
+  transform: scale(1.055) translate3d(-5px, -4px, 0);
+}
+
+.showcase-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.1), transparent 34%),
+    linear-gradient(180deg, rgba(5, 19, 35, 0.04) 28%, rgba(5, 18, 33, 0.58));
+}
+
+.showcase-caption {
+  position: absolute;
+  left: 28px;
+  bottom: 28px;
+  z-index: 1;
+  display: grid;
+  gap: 6px;
+  color: #fff;
+  text-shadow: 0 8px 22px rgba(0, 0, 0, 0.38);
+}
+
+.showcase-caption span {
+  font-size: 12px;
+  font-weight: 850;
+  opacity: 0.86;
+}
+
+.showcase-caption strong {
+  font-size: 22px;
 }
 
 .panel {
@@ -745,7 +801,12 @@ h3 {
 }
 
 .log-table .table-row {
-  grid-template-columns: minmax(160px, 1.2fr) minmax(100px, 0.8fr) minmax(110px, 0.9fr) 76px 86px minmax(260px, 1.8fr);
+  grid-template-columns: minmax(160px, 1.1fr) minmax(100px, 0.7fr) minmax(110px, 0.8fr) minmax(260px, 1.6fr) minmax(260px, 1.6fr);
+  min-width: 920px;
+}
+
+.task-table .table-row {
+  grid-template-columns: minmax(160px, 1fr) minmax(110px, 0.7fr) minmax(100px, 0.7fr) minmax(92px, 0.6fr) minmax(180px, 1.1fr) 104px;
   min-width: 920px;
 }
 
@@ -753,6 +814,27 @@ h3 {
   overflow-wrap: anywhere;
   color: #5f7894;
   font-size: 13px;
+  max-height: 86px;
+  overflow: auto;
+  line-height: 1.45;
+}
+
+.result-cell {
+  display: flex;
+  align-items: center;
+  min-height: 58px;
+  color: #5f7894;
+  font-size: 13px;
+}
+
+.result-cell img,
+.result-cell video {
+  width: 88px;
+  height: 58px;
+  border: 1px solid rgba(42, 129, 196, 0.14);
+  border-radius: 8px;
+  object-fit: cover;
+  background: #eaf7ff;
 }
 
 .mini-toggle {
@@ -793,12 +875,25 @@ h3 {
   }
 }
 
+@keyframes visualFloat {
+  from {
+    transform: scale(1.02) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.05) translate3d(-10px, -8px, 0);
+  }
+}
+
 @media (max-width: 1120px) {
   .auth-card,
   .config-grid,
   .config-group,
   .model-config-grid {
     grid-template-columns: 1fr;
+  }
+
+  .showcase-panel {
+    min-height: 320px;
   }
 
   .mode-form {
@@ -832,6 +927,10 @@ h3 {
 
   .auth-card {
     min-height: auto;
+  }
+
+  .showcase-panel {
+    min-height: 260px;
   }
 
   .login-panel,

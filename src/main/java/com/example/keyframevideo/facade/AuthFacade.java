@@ -38,8 +38,8 @@ public class AuthFacade {
             userInfo.setDisplayName(username);
             userInfo.setPassword(password);
             userInfo.setAdmin(AdminConstants.INITIAL_ADMIN_USERNAME.equals(username));
-            userInfo.setImageCallLimit(AdminConstants.DEFAULT_IMAGE_CALL_LIMIT);
-            userInfo.setVideoCallLimit(AdminConstants.DEFAULT_VIDEO_CALL_LIMIT);
+            userInfo.setImageRemainingCount(AdminConstants.DEFAULT_IMAGE_REMAINING_COUNT);
+            userInfo.setVideoRemainingCount(AdminConstants.DEFAULT_VIDEO_REMAINING_COUNT);
             // 首次登录自动创建用户，按当前产品要求明文保存密码，不保存任何厂商 api-key。
             userService.save(userInfo);
             return toVO(userInfo);

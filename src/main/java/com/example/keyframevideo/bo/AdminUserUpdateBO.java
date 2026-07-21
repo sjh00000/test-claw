@@ -10,9 +10,9 @@ public class AdminUserUpdateBO extends AdminOperatorBO {
     @NotNull(message = "用户不能为空")
     private Long userId;
 
-    @Min(value = 0, message = "图片调用次数不能小于 0")
-    private Integer imageCallLimit;
+    @Min(value = 0, message = "图片剩余次数不能小于 0")
+    private Integer imageRemainingCount;
 
-    @Min(value = 0, message = "视频调用次数不能小于 0")
-    private Integer videoCallLimit;
+    @Min(value = 0, message = "视频剩余次数不能小于 0")
+    private Integer videoRemainingCount;
 }

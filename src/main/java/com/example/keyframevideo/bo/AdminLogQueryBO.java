@@ -8,5 +8,4 @@ public class AdminLogQueryBO extends AdminOperatorBO {
     private Long userId;
     private String username;
     private String operationType;
-    private String status;
 }

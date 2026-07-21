@@ -11,12 +11,7 @@ public class OperationLogVO {
     private String username;
     private String operationType;
     private String operationName;
-    private String targetType;
-    private String targetId;
-    private String status;
-    private String requestSummary;
-    private String responseSummary;
-    private String errorMessage;
-    private Long durationMs;
+    private String requestBody;
+    private String responseBody;
     private Instant createdAt;
 }

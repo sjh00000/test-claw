@@ -9,7 +9,7 @@ public class AdminUserVO {
     private Long userId;
     private String username;
     private Boolean admin;
-    private Integer imageCallLimit;
-    private Integer videoCallLimit;
+    private Integer imageRemainingCount;
+    private Integer videoRemainingCount;
     private Instant createdAt;
 }

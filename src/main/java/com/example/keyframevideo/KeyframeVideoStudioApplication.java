@@ -8,11 +8,13 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 @Slf4j
 @SpringBootApplication
 @EnableConfigurationProperties(GenerationProperties.class)
 @MapperScan("com.example.keyframevideo.mapper")
+@EnableAsync
 public class KeyframeVideoStudioApplication {
 
     public static void main(String[] args) {

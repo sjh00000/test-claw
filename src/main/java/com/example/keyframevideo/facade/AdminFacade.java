@@ -45,8 +45,8 @@ public class AdminFacade {
         assertAdmin();
         UserInfo userInfo = userService.getRequiredById(updateBO.getUserId());
         userInfo.setAdmin(AdminConstants.INITIAL_ADMIN_USERNAME.equals(userInfo.getUsername()));
-        userInfo.setImageCallLimit(resolveLimit(updateBO.getImageCallLimit()));
-        userInfo.setVideoCallLimit(resolveLimit(updateBO.getVideoCallLimit()));
+        userInfo.setImageRemainingCount(resolveCount(updateBO.getImageRemainingCount()));
+        userInfo.setVideoRemainingCount(resolveCount(updateBO.getVideoRemainingCount()));
         // 用户权限和额度影响后续所有生成入口，统一在后台保存为单表配置。
         userService.updateById(userInfo);
         return toUserVO(userInfo);
@@ -57,8 +57,7 @@ public class AdminFacade {
         return operationLogService.listForAdmin(
                         queryBO.getUserId(),
                         queryBO.getUsername(),
-                        queryBO.getOperationType(),
-                        queryBO.getStatus())
+                        queryBO.getOperationType())
                 .stream()
                 .map(this::toLogVO)
                 .toList();
@@ -103,8 +102,8 @@ public class AdminFacade {
         return operator;
     }
 
-    private int resolveLimit(Integer limit) {
-        return limit == null ? 0 : Math.max(0, limit);
+    private int resolveCount(Integer count) {
+        return count == null ? 0 : Math.max(0, count);
     }
 
     private AdminUserVO toUserVO(UserInfo userInfo) {
@@ -112,8 +111,8 @@ public class AdminFacade {
         adminUserVO.setUserId(userInfo.getId());
         adminUserVO.setUsername(userInfo.getUsername());
         adminUserVO.setAdmin(AdminConstants.INITIAL_ADMIN_USERNAME.equals(userInfo.getUsername()));
-        adminUserVO.setImageCallLimit(userInfo.getImageCallLimit());
-        adminUserVO.setVideoCallLimit(userInfo.getVideoCallLimit());
+        adminUserVO.setImageRemainingCount(userInfo.getImageRemainingCount());
+        adminUserVO.setVideoRemainingCount(userInfo.getVideoRemainingCount());
         adminUserVO.setCreatedAt(userInfo.getCreatedAt());
         return adminUserVO;
     }
@@ -125,13 +124,8 @@ public class AdminFacade {
         operationLogVO.setUsername(operationLog.getUsername());
         operationLogVO.setOperationType(operationLog.getOperationType());
         operationLogVO.setOperationName(operationLog.getOperationName());
-        operationLogVO.setTargetType(operationLog.getTargetType());
-        operationLogVO.setTargetId(operationLog.getTargetId());
-        operationLogVO.setStatus(operationLog.getStatus());
-        operationLogVO.setRequestSummary(operationLog.getRequestSummary());
-        operationLogVO.setResponseSummary(operationLog.getResponseSummary());
-        operationLogVO.setErrorMessage(operationLog.getErrorMessage());
-        operationLogVO.setDurationMs(operationLog.getDurationMs());
+        operationLogVO.setRequestBody(operationLog.getRequestBody());
+        operationLogVO.setResponseBody(operationLog.getResponseBody());
         operationLogVO.setCreatedAt(operationLog.getCreatedAt());
         return operationLogVO;
     }
@@ -143,6 +137,7 @@ public class AdminFacade {
         modelConfigVO.setServiceType(modelConfig.getServiceType());
         modelConfigVO.setServiceName(serviceTypeEnum.getDesc());
         modelConfigVO.setBaseUrl(modelConfig.getBaseUrl());
+        modelConfigVO.setApiKey(modelConfig.getApiKey());
         modelConfigVO.setApiKeyMask(maskApiKey(modelConfig.getApiKey()));
         modelConfigVO.setModel(modelConfig.getModel());
         modelConfigVO.setEnabled(Boolean.TRUE.equals(modelConfig.getEnabled()));

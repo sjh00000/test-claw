@@ -8,7 +8,5 @@ public interface OperationLogService extends IService<OperationLog> {
 
     void record(OperationLog operationLog);
 
-    long countSuccess(Long userId, String operationType);
-
-    List<OperationLog> listForAdmin(Long userId, String username, String operationType, String status);
+    List<OperationLog> listForAdmin(Long userId, String username, String operationType);
 }

@@ -7,7 +7,7 @@ Vue3 + Spring Boot 的文生图 / 文生视频工作台。
 - 用户登录，首次登录自动创建用户；登录成功返回 24 小时 `accessToken`，用户信息持久化到 MySQL。
 - 文生图独立使用 image-provider，支持无参考图纯文生图，也支持上传参考图后按图编辑生成。
 - 文生视频独立使用 Seedance，支持无参考图纯文生视频，也支持上传参考图后多模态参考生成。
-- 管理员后台维护图片/视频永久调用次数和模型服务配置。
+- 管理员后台维护图片/视频剩余次数和模型服务配置。
 - 不再创建本地生成会话，不再串联“参考图 -> 关键帧 -> 视频”的流程。
 
 ## MySQL 配置
@@ -39,7 +39,7 @@ $env:MYSQL_PASSWORD="你的密码"
 
 管理员固定为用户名 `sjh`，不再支持页面设置其他管理员。管理员登录后可在右上角进入：
 
-- 用户设置：查看用户、配置图片/视频永久调用次数。
+- 用户设置：查看用户、配置图片/视频剩余次数。
 - 使用日志：仅记录文生图、文生视频调用，可按用户、生成类型和状态筛选。
 - 模型配置：维护图片服务和视频服务的服务地址、密钥、模型名称。
 
@@ -70,7 +70,7 @@ npm run dev
 - `POST /api/generation/videos`：文生视频，参考图可选。
 - `POST /api/generation/videos/status`：按 Seedance 任务 ID 查询视频状态。
 - `POST /api/admin/users`：管理员查看用户。
-- `POST /api/admin/users/update`：管理员保存用户图片/视频永久调用次数。
+- `POST /api/admin/users/update`：管理员保存用户图片/视频剩余次数。
 - `POST /api/admin/logs`：管理员筛选文生图、文生视频使用日志。
 - `POST /api/admin/model-configs`：管理员查看模型配置。
 - `POST /api/admin/model-configs/save`：管理员保存模型配置。

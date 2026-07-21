@@ -4,6 +4,7 @@ import {
   Film,
   Image as ImageIcon,
   KeyRound,
+  ListChecks,
   LogIn,
   LogOut,
   Minus,
@@ -16,14 +17,16 @@ import {
   Video as VideoIcon,
   WandSparkles
 } from '@lucide/vue'
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
   generateImage,
   generateVideo,
   listAdminLogs,
   listAdminUsers,
   listModelConfigs,
+  listTasks,
   login,
+  queryTaskStatus,
   queryVideoStatus,
   saveModelConfig,
   updateAdminUser
@@ -31,6 +34,7 @@ import {
 
 const VIDEO_DURATION_MIN = 4
 const VIDEO_DURATION_MAX = 15
+const VIDEO_STATUS_POLL_INTERVAL_MS = 5000
 
 const savedUser = JSON.parse(localStorage.getItem('studioUser') || 'null')
 
@@ -72,7 +76,12 @@ const userSearch = reactive({
 const logFilter = reactive({
   userId: '',
   username: '',
-  operationType: '',
+  operationType: ''
+})
+
+const taskFilter = reactive({
+  username: '',
+  taskType: '',
   status: ''
 })
 
@@ -99,12 +108,17 @@ const modelForms = reactive({
 
 const imageResult = ref(null)
 const videoResult = ref(null)
+const imageStatusPolling = ref(false)
+const videoStatusPolling = ref(false)
 const adminUsers = ref([])
 const operationLogs = ref([])
 const modelConfigs = ref([])
+const generationTasks = ref([])
 
 const isLoggedIn = computed(() => Boolean(user.value?.userId && user.value?.accessToken))
 const isAdmin = computed(() => Boolean(user.value?.admin))
+let videoStatusTimer = null
+let imageStatusTimer = null
 
 function referenceImagePayload(items) {
   return items.map((item, index) => ({
@@ -165,6 +179,8 @@ async function submitLogin() {
 }
 
 function logout() {
+  stopImageStatusPolling()
+  stopVideoStatusPolling()
   user.value = null
   currentPage.value = 'studio'
   localStorage.removeItem('studioUser')
@@ -188,6 +204,7 @@ async function submitImage() {
       imageSize: imageForm.imageSize,
       imageQuality: imageForm.imageQuality
     })
+    startImageStatusPolling(imageResult.value?.taskId)
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -206,6 +223,7 @@ async function submitVideo() {
   }
   videoLoading.value = true
   errorMessage.value = ''
+  stopVideoStatusPolling()
   try {
     videoResult.value = await generateVideo({
       prompt: videoForm.prompt.trim(),
@@ -215,6 +233,7 @@ async function submitVideo() {
       ratio: videoForm.ratio,
       generateAudio: videoForm.generateAudio
     })
+    startVideoStatusPolling(videoResult.value?.taskId)
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -222,21 +241,106 @@ async function submitVideo() {
   }
 }
 
-async function refreshVideoStatus() {
-  if (!videoResult.value?.taskId) {
+function startImageStatusPolling(taskId) {
+  if (!taskId || isTerminalGenerationStatus(imageResult.value)) {
     return
   }
-  videoLoading.value = true
-  errorMessage.value = ''
+  stopImageStatusPolling()
+  imageStatusPolling.value = true
+  imageStatusTimer = window.setTimeout(() => pollImageStatus(taskId), VIDEO_STATUS_POLL_INTERVAL_MS)
+}
+
+function stopImageStatusPolling() {
+  if (imageStatusTimer) {
+    window.clearTimeout(imageStatusTimer)
+    imageStatusTimer = null
+  }
+  imageStatusPolling.value = false
+}
+
+async function pollImageStatus(taskId) {
+  if (!taskId || imageResult.value?.taskId !== taskId) {
+    stopImageStatusPolling()
+    return
+  }
   try {
-    videoResult.value = await queryVideoStatus({
-      taskId: videoResult.value.taskId
-    })
+    const latestTask = await queryTaskStatus({ taskId })
+    if (imageResult.value?.taskId !== taskId) {
+      stopImageStatusPolling()
+      return
+    }
+    imageResult.value = {
+      taskId: latestTask.taskId,
+      status: latestTask.statusName || latestTask.status,
+      imageUrl: latestTask.resultUrl,
+      failReason: latestTask.failReason
+    }
+    if (isTerminalGenerationStatus(latestTask)) {
+      stopImageStatusPolling()
+      await refreshTaskCenterIfOpen()
+      return
+    }
   } catch (error) {
     errorMessage.value = error.message
-  } finally {
-    videoLoading.value = false
+    stopImageStatusPolling()
+    return
   }
+  imageStatusTimer = window.setTimeout(() => pollImageStatus(taskId), VIDEO_STATUS_POLL_INTERVAL_MS)
+}
+
+function startVideoStatusPolling(taskId) {
+  if (!taskId || isTerminalGenerationStatus(videoResult.value)) {
+    return
+  }
+  stopVideoStatusPolling()
+  videoStatusPolling.value = true
+  videoStatusTimer = window.setTimeout(() => pollVideoStatus(taskId), VIDEO_STATUS_POLL_INTERVAL_MS)
+}
+
+function stopVideoStatusPolling() {
+  if (videoStatusTimer) {
+    window.clearTimeout(videoStatusTimer)
+    videoStatusTimer = null
+  }
+  videoStatusPolling.value = false
+}
+
+async function pollVideoStatus(taskId) {
+  if (!taskId || videoResult.value?.taskId !== taskId) {
+    stopVideoStatusPolling()
+    return
+  }
+  try {
+    const latestStatus = await queryVideoStatus({
+      taskId: videoResult.value.taskId
+    })
+    if (videoResult.value?.taskId !== taskId) {
+      stopVideoStatusPolling()
+      return
+    }
+    videoResult.value = latestStatus
+    if (isTerminalGenerationStatus(latestStatus)) {
+      stopVideoStatusPolling()
+      await refreshTaskCenterIfOpen()
+      return
+    }
+  } catch (error) {
+    errorMessage.value = error.message
+    stopVideoStatusPolling()
+    return
+  }
+  videoStatusTimer = window.setTimeout(() => pollVideoStatus(taskId), VIDEO_STATUS_POLL_INTERVAL_MS)
+}
+
+function isTerminalGenerationStatus(result) {
+  const status = String(result?.status || '').toUpperCase()
+  return Boolean(
+    result?.imageUrl
+    || result?.videoUrl
+    || result?.resultUrl
+    || result?.failReason
+    || ['SUCCEEDED', 'SUCCESS', 'COMPLETED', 'FAILED', 'FAIL', 'CANCELED', 'CANCELLED'].includes(status)
+  )
 }
 
 function clampVideoDuration(value) {
@@ -271,6 +375,9 @@ async function openPage(page) {
   if (page === 'logs') {
     await fetchOperationLogs()
   }
+  if (page === 'tasks') {
+    await fetchGenerationTasks()
+  }
   if (page === 'models') {
     await fetchModelConfigs()
   }
@@ -296,8 +403,8 @@ async function saveUserSettings(item) {
   try {
     const updated = await updateAdminUser({
       userId: item.userId,
-      imageCallLimit: Number(item.imageCallLimit),
-      videoCallLimit: Number(item.videoCallLimit)
+      imageRemainingCount: Number(item.imageRemainingCount),
+      videoRemainingCount: Number(item.videoRemainingCount)
     })
     const index = adminUsers.value.findIndex((userItem) => userItem.userId === updated.userId)
     if (index >= 0) {
@@ -318,14 +425,45 @@ async function fetchOperationLogs() {
     operationLogs.value = await listAdminLogs({
       userId: logFilter.userId ? Number(logFilter.userId) : null,
       username: logFilter.username.trim(),
-      operationType: logFilter.operationType,
-      status: logFilter.status
+      operationType: logFilter.operationType
     })
   } catch (error) {
     adminMessage.value = error.message
   } finally {
     adminLoading.value = false
   }
+}
+
+async function fetchGenerationTasks() {
+  adminLoading.value = true
+  adminMessage.value = ''
+  try {
+    generationTasks.value = await listTasks({
+      username: taskFilter.username.trim(),
+      taskType: taskFilter.taskType,
+      status: taskFilter.status
+    })
+  } catch (error) {
+    adminMessage.value = error.message
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+async function refreshTaskCenterIfOpen() {
+  if (currentPage.value === 'tasks') {
+    await fetchGenerationTasks()
+  }
+}
+
+function taskResultKind(item) {
+  if (item.taskType === 'TEXT_TO_IMAGE') {
+    return 'image'
+  }
+  if (item.taskType === 'TEXT_TO_VIDEO') {
+    return 'video'
+  }
+  return 'file'
 }
 
 async function fetchModelConfigs() {
@@ -337,7 +475,7 @@ async function fetchModelConfigs() {
       const form = modelForms[config.serviceType]
       if (form) {
         form.baseUrl = config.baseUrl || ''
-        form.apiKey = ''
+        form.apiKey = config.apiKey || ''
         form.apiKeyMask = config.apiKeyMask || ''
         form.model = config.model || ''
         form.enabled = config.enabled !== false
@@ -362,7 +500,7 @@ async function submitModelConfig(serviceType) {
       model: form.model.trim(),
       enabled: form.enabled
     })
-    form.apiKey = ''
+    form.apiKey = saved.apiKey || form.apiKey
     form.apiKeyMask = saved.apiKeyMask || ''
     await fetchModelConfigs()
     adminMessage.value = `${form.title}已保存`
@@ -372,6 +510,11 @@ async function submitModelConfig(serviceType) {
     adminLoading.value = false
   }
 }
+
+onBeforeUnmount(() => {
+  stopImageStatusPolling()
+  stopVideoStatusPolling()
+})
 </script>
 
 <template>
@@ -383,11 +526,12 @@ async function submitModelConfig(serviceType) {
           <h1>文生图 / 文生视频工作台</h1>
         </div>
         <div v-if="isLoggedIn" class="top-actions">
-          <nav v-if="isAdmin" class="admin-nav" aria-label="管理员页面">
+          <nav class="admin-nav" aria-label="页面导航">
             <button type="button" :class="{ active: currentPage === 'studio' }" @click="openPage('studio')">工作台</button>
-            <button type="button" :class="{ active: currentPage === 'users' }" @click="openPage('users')">用户设置</button>
-            <button type="button" :class="{ active: currentPage === 'logs' }" @click="openPage('logs')">使用日志</button>
-            <button type="button" :class="{ active: currentPage === 'models' }" @click="openPage('models')">模型配置</button>
+            <button type="button" :class="{ active: currentPage === 'tasks' }" @click="openPage('tasks')">任务中心</button>
+            <button v-if="isAdmin" type="button" :class="{ active: currentPage === 'users' }" @click="openPage('users')">用户设置</button>
+            <button v-if="isAdmin" type="button" :class="{ active: currentPage === 'logs' }" @click="openPage('logs')">使用日志</button>
+            <button v-if="isAdmin" type="button" :class="{ active: currentPage === 'models' }" @click="openPage('models')">模型配置</button>
           </nav>
           <div class="user-chip">
             <UserRound :size="16" />
@@ -425,6 +569,12 @@ async function submitModelConfig(serviceType) {
               <LogIn :size="17" />
               {{ loginLoading ? '登录中' : '登录 / 首次创建' }}
             </button>
+          </div>
+        </div>
+        <div class="showcase-panel" aria-hidden="true">
+          <div class="showcase-caption">
+            <span>轻量创作空间</span>
+            <strong>从一句话开始生成画面</strong>
           </div>
         </div>
       </section>
@@ -511,6 +661,13 @@ async function submitModelConfig(serviceType) {
                 <WandSparkles :size="17" />
                 {{ imageLoading ? '生成中' : '生成图片' }}
               </button>
+              <div v-if="imageResult?.taskId" class="video-status">
+                <span>任务</span>
+                <strong>{{ imageResult.taskId }}</strong>
+                <span>状态</span>
+                <strong>{{ imageStatusPolling ? `${imageResult.status || '已提交'} · 自动刷新中` : (imageResult.status || '已提交') }}</strong>
+              </div>
+              <p v-if="imageResult?.failReason" class="error-message compact">{{ imageResult.failReason }}</p>
               <div v-if="imageResult?.imageUrl" class="result-preview compact-preview">
                 <img :src="imageResult.imageUrl" alt="生成图片" />
                 <button type="button" @click="downloadUrl(imageResult.imageUrl, 'generated-image.png')">
@@ -520,8 +677,8 @@ async function submitModelConfig(serviceType) {
               </div>
               <div v-else class="empty-preview image-empty">
                 <ImageIcon :size="34" />
-                <strong>图片结果将在这里展开</strong>
-                <span>支持纯文本生成，也支持参考图约束。</span>
+                <strong>图片任务将在这里更新</strong>
+                <span>提交后自动刷新状态，完成后可下载结果。</span>
               </div>
             </article>
 
@@ -588,16 +745,12 @@ async function submitModelConfig(serviceType) {
                   <VideoIcon :size="17" />
                   {{ videoLoading ? '处理中' : '提交视频任务' }}
                 </button>
-                <button class="secondary-action" type="button" :disabled="videoLoading || !videoResult?.taskId" @click="refreshVideoStatus">
-                  <RefreshCw :size="17" />
-                  刷新状态
-                </button>
               </div>
               <div v-if="videoResult?.taskId" class="video-status">
-                <span>任务 ID</span>
+                <span>任务</span>
                 <strong>{{ videoResult.taskId }}</strong>
                 <span>状态</span>
-                <strong>{{ videoResult.status || '已提交' }}</strong>
+                <strong>{{ videoStatusPolling ? `${videoResult.status || '已提交'} · 自动刷新中` : (videoResult.status || '已提交') }}</strong>
               </div>
               <p v-if="videoResult?.failReason" class="error-message compact">{{ videoResult.failReason }}</p>
               <div v-if="videoResult?.videoUrl" class="result-preview compact-preview">
@@ -610,7 +763,7 @@ async function submitModelConfig(serviceType) {
               <div v-if="!videoResult?.taskId" class="empty-preview video-empty">
                 <Film :size="34" />
                 <strong>视频任务状态将在这里呈现</strong>
-                <span>提交任务后可刷新状态并下载最终视频。</span>
+                <span>提交任务后会自动刷新状态并下载最终视频。</span>
               </div>
             </article>
           </Transition>
@@ -636,15 +789,76 @@ async function submitModelConfig(serviceType) {
           <div class="data-table">
             <div class="table-row table-head">
               <span>用户</span>
-              <span>图片总次数</span>
-              <span>视频总次数</span>
+              <span>图片剩余次数</span>
+              <span>视频剩余次数</span>
               <span>操作</span>
             </div>
             <div v-for="item in adminUsers" :key="item.userId" class="table-row">
               <strong>{{ item.username }}</strong>
-              <input v-model.number="item.imageCallLimit" class="table-input" type="number" min="0" />
-              <input v-model.number="item.videoCallLimit" class="table-input" type="number" min="0" />
+              <input v-model.number="item.imageRemainingCount" class="table-input" type="number" min="0" />
+              <input v-model.number="item.videoRemainingCount" class="table-input" type="number" min="0" />
               <button class="secondary-action" type="button" :disabled="adminLoading" @click="saveUserSettings(item)">保存</button>
+            </div>
+          </div>
+        </section>
+
+        <section v-else-if="currentPage === 'tasks'" class="panel admin-panel">
+          <div class="admin-panel-head">
+            <div class="panel-heading">
+              <div class="heading-icon">
+                <ListChecks :size="20" />
+              </div>
+              <div>
+                <p class="eyebrow">任务中心</p>
+                <h2>生成任务</h2>
+              </div>
+            </div>
+            <div class="admin-toolbar log-toolbar">
+              <input v-if="isAdmin" v-model.trim="taskFilter.username" type="text" placeholder="用户名" />
+              <select v-model="taskFilter.taskType">
+                <option value="">全部类型</option>
+                <option value="TEXT_TO_IMAGE">文生图</option>
+                <option value="TEXT_TO_VIDEO">文生视频</option>
+              </select>
+              <select v-model="taskFilter.status">
+                <option value="">全部状态</option>
+                <option value="SUBMITTED">已提交</option>
+                <option value="RUNNING">生成中</option>
+                <option value="SUCCEEDED">已完成</option>
+                <option value="FAILED">生成失败</option>
+              </select>
+              <button class="secondary-action" type="button" :disabled="adminLoading" @click="fetchGenerationTasks">筛选</button>
+            </div>
+          </div>
+          <p v-if="adminMessage" class="hint-message">{{ adminMessage }}</p>
+          <div class="data-table task-table">
+            <div class="table-row table-head">
+              <span>时间</span>
+              <span>用户</span>
+              <span>类型</span>
+              <span>状态</span>
+              <span>结果</span>
+              <span>操作</span>
+            </div>
+            <div v-for="item in generationTasks" :key="item.taskId" class="table-row">
+              <span>{{ new Date(item.createdAt).toLocaleString() }}</span>
+              <strong>{{ item.username || '-' }}</strong>
+              <span>{{ item.taskName }}</span>
+              <span>{{ item.statusName || item.status }}</span>
+              <span class="result-cell">
+                <img v-if="item.resultUrl && taskResultKind(item) === 'image'" :src="item.resultUrl" alt="任务图片结果" />
+                <video v-else-if="item.resultUrl && taskResultKind(item) === 'video'" :src="item.resultUrl" muted />
+                <span v-else>{{ item.failReason || '等待生成' }}</span>
+              </span>
+              <button
+                class="secondary-action"
+                type="button"
+                :disabled="!item.resultUrl"
+                @click="downloadUrl(item.resultUrl, item.taskType === 'TEXT_TO_IMAGE' ? 'generated-image.png' : 'generated-video.mp4')"
+              >
+                <Download :size="16" />
+                下载
+              </button>
             </div>
           </div>
         </section>
@@ -667,11 +881,6 @@ async function submitModelConfig(serviceType) {
                 <option value="TEXT_TO_IMAGE">文生图</option>
                 <option value="TEXT_TO_VIDEO">文生视频</option>
               </select>
-              <select v-model="logFilter.status">
-                <option value="">全部状态</option>
-                <option value="SUCCESS">成功</option>
-                <option value="FAILURE">失败</option>
-              </select>
               <button class="secondary-action" type="button" :disabled="adminLoading" @click="fetchOperationLogs">筛选</button>
             </div>
           </div>
@@ -681,17 +890,15 @@ async function submitModelConfig(serviceType) {
               <span>时间</span>
               <span>用户</span>
               <span>操作</span>
-              <span>状态</span>
-              <span>耗时</span>
-              <span>摘要</span>
+              <span>请求内容</span>
+              <span>返回内容</span>
             </div>
             <div v-for="item in operationLogs" :key="item.id" class="table-row">
               <span>{{ new Date(item.createdAt).toLocaleString() }}</span>
               <strong>{{ item.username || '-' }}</strong>
               <span>{{ item.operationName }}</span>
-              <span>{{ item.status }}</span>
-              <span>{{ item.durationMs ?? '-' }}ms</span>
-              <span class="summary-cell">{{ item.errorMessage || item.responseSummary || item.requestSummary }}</span>
+              <span class="summary-cell">{{ item.requestBody }}</span>
+              <span class="summary-cell">{{ item.responseBody }}</span>
             </div>
           </div>
         </section>
@@ -719,7 +926,19 @@ async function submitModelConfig(serviceType) {
               </label>
               <label class="field">
                 密钥
-                <input v-model.trim="form.apiKey" type="password" autocomplete="off" :placeholder="form.apiKeyMask || '留空保持原密钥'" />
+                <input
+                  v-model.trim="form.apiKey"
+                  type="text"
+                  inputmode="text"
+                  autocomplete="new-password"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck="false"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  :name="`${form.serviceType.toLowerCase()}-provider-key`"
+                  :placeholder="form.apiKeyMask || '请输入服务密钥'"
+                />
               </label>
               <label class="field">
                 模型名称

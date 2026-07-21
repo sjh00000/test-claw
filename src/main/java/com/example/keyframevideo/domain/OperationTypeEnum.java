@@ -15,4 +15,13 @@ public enum OperationTypeEnum {
         this.code = code;
         this.desc = desc;
     }
+
+    public static String getDescByCode(String code) {
+        for (OperationTypeEnum item : values()) {
+            if (item.getCode().equals(code)) {
+                return item.getDesc();
+            }
+        }
+        return code;
+    }
 }

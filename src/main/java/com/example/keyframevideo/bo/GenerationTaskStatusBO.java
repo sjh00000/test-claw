@@ -4,9 +4,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 @Data
-public class VideoStatusBO {
+public class GenerationTaskStatusBO {
 
-    // 本地任务中心的任务 ID。
-    @NotNull(message = "视频任务 ID 不能为空")
+    @NotNull(message = "任务 ID 不能为空")
     private Long taskId;
 }

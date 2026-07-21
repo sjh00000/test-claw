@@ -94,7 +94,7 @@
         "url": "{{baseUrl}}/api/admin/users/update",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"userId\": {{userId}},\n  \"imageCallLimit\": 20,\n  \"videoCallLimit\": 5\n}"
+          "raw": "{\n  \"userId\": {{userId}},\n  \"imageRemainingCount\": 20,\n  \"videoRemainingCount\": 5\n}"
         }
       }
     },
@@ -162,7 +162,7 @@
         "url": "{{baseUrl}}/api/admin/logs",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"username\": \"\",\n  \"operationType\": \"TEXT_TO_IMAGE\",\n  \"status\": \"\"\n}"
+          "raw": "{\n  \"username\": \"\",\n  \"operationType\": \"TEXT_TO_IMAGE\"\n}"
         }
       }
     },
@@ -179,12 +179,60 @@
         "url": "{{baseUrl}}/api/admin/logs",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"username\": \"\",\n  \"operationType\": \"TEXT_TO_VIDEO\",\n  \"status\": \"\"\n}"
+          "raw": "{\n  \"username\": \"\",\n  \"operationType\": \"TEXT_TO_VIDEO\"\n}"
+        }
+      }
+    },
+    {
+      "name": "任务中心-任务列表",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/generation/tasks",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"\",\n  \"taskType\": \"\",\n  \"status\": \"\"\n}"
+        }
+      }
+    },
+    {
+      "name": "任务中心-查询任务状态",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/generation/tasks/status",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taskId\": {{taskId}}\n}"
         }
       }
     },
     {
       "name": "文生图（无参考图）",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.data && body.data.taskId) {",
+              "  pm.collectionVariables.set('taskId', body.data.taskId);",
+              "}"
+            ]
+          }
+        }
+      ],
       "request": {
         "method": "POST",
         "header": [
@@ -202,6 +250,20 @@
     },
     {
       "name": "文生图（有参考图）",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.data && body.data.taskId) {",
+              "  pm.collectionVariables.set('taskId', body.data.taskId);",
+              "}"
+            ]
+          }
+        }
+      ],
       "request": {
         "method": "POST",
         "header": [
@@ -219,6 +281,20 @@
     },
     {
       "name": "文生视频",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.data && body.data.taskId) {",
+              "  pm.collectionVariables.set('taskId', body.data.taskId);",
+              "}"
+            ]
+          }
+        }
+      ],
       "request": {
         "method": "POST",
         "header": [
@@ -247,7 +323,7 @@
         "url": "{{baseUrl}}/api/generation/videos/status",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"taskId\": \"{{taskId}}\"\n}"
+          "raw": "{\n  \"taskId\": {{taskId}}\n}"
         }
       }
     }
