@@ -531,8 +531,8 @@ async function submitModelConfig(serviceType) {
                 <textarea v-model="videoForm.prompt" rows="6" placeholder="描述镜头运动、主体动作、氛围和风格；参考图可选" />
               </label>
               <div class="inline-fields three">
-                <label class="field">
-                  时长
+                <div class="field">
+                  <span>时长</span>
                   <div class="duration-stepper">
                     <button type="button" :disabled="videoForm.duration <= VIDEO_DURATION_MIN" @click="adjustVideoDuration(-1)">
                       <Minus :size="16" />
@@ -542,7 +542,7 @@ async function submitModelConfig(serviceType) {
                       <Plus :size="16" />
                     </button>
                   </div>
-                </label>
+                </div>
                 <label class="field">
                   清晰度
                   <select v-model="videoForm.resolution">
