@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: keyframe-video-studio
+  profiles:
+    # 本机默认使用 dev；Docker 部署时通过启动参数切到 prod。
+    active: dev
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: keyframe-video-studio-pool
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      encoding: UTF-8
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+server:
+  # 后端 API 端口，前端 Vite 通过 /api 代理到这里。
+  port: 8080
+
+auth:
+  jwt:
+    # JWT 签名密钥；生产环境必须修改，真实值只保存在本地/服务器 application.yml。
+    secret: change-me-jwt-secret
+
+generation:
+  image-provider:
+    # 图片编辑接口路径，对应 image2 示例中的 /v1/images/edits。
+    edit-endpoint: /v1/images/edits
+    # 图片生成接口路径，用于先生成主体/角色参考图。
+    generation-endpoint: /v1/images/generations
+    # image2 输出尺寸。
+    size: 1024x1024
+    # image2 输出质量。
+    quality: medium
+    # image-2 单次调用超时时间，超过后该帧可重新生成。
+    request-timeout-seconds: 600
+  oss:
+    # OSS SDK 上传 Endpoint，不带 bucket 名。
+    endpoint: https://oss-cn-chengdu.aliyuncs.com
+    # OSS AccessKeyId；真实值只保存在本地/服务器 application.yml。
+    access-key-id: change-me-access-key-id
+    # OSS AccessKeySecret；真实值只保存在本地/服务器 application.yml。
+    access-key-secret: change-me-access-key-secret
+    # OSS 存储空间名称。
+    bucket-name: videos-sun
+    # OSS Bucket 域名，用于保存可访问结果地址。
+    bucket-domain: https://videos-sun.oss-cn-chengdu.aliyuncs.com
+    # 生成结果在 OSS 中的统一目录前缀。
+    object-prefix: test-claw
+  task:
+    # 任务 ID 使用紧凑雪花算法，多实例部署时每个实例配置不同 workerId，范围 0-15。
+    worker-id: 1

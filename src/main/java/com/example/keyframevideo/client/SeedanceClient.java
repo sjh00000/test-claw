@@ -5,7 +5,6 @@ import cn.hutool.core.util.StrUtil;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.keyframevideo.bo.ProviderConfigBO;
-import com.example.keyframevideo.config.GenerationProperties;
 import com.example.keyframevideo.domain.ReferenceImage;
 import com.example.keyframevideo.domain.SeedanceTaskStatus;
 import com.example.keyframevideo.exception.BusinessException;
@@ -23,15 +22,12 @@ import org.springframework.web.client.RestClientResponseException;
 @Component
 public class SeedanceClient {
 
-    private final GenerationProperties properties;
     private final RestClient.Builder restClientBuilder;
     private final ObjectMapper objectMapper;
 
     public SeedanceClient(
-            GenerationProperties properties,
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper) {
-        this.properties = properties;
         this.restClientBuilder = restClientBuilder;
         this.objectMapper = objectMapper;
     }
@@ -44,7 +40,7 @@ public class SeedanceClient {
             String ratio,
             boolean generateAudio,
             ProviderConfigBO providerConfigBO) {
-        GenerationProperties.Seedance seedance = resolveSeedance(providerConfigBO);
+        ProviderConfigBO seedance = resolveSeedance(providerConfigBO);
         if (!isSeedanceConfigured(seedance)) {
             // Seedance base-url、api-key、model 任一缺失时使用 mock task，避免带空模型或凭证请求外部服务。
             log.info("Seedance 未配置厂商参数，使用 mock task");
@@ -99,7 +95,7 @@ public class SeedanceClient {
     }
 
     public SeedanceTaskStatus query(String taskId, ProviderConfigBO providerConfigBO) {
-        GenerationProperties.Seedance seedance = resolveSeedance(providerConfigBO);
+        ProviderConfigBO seedance = resolveSeedance(providerConfigBO);
         SeedanceTaskStatus status = new SeedanceTaskStatus();
         status.setTaskId(taskId);
 
@@ -145,7 +141,7 @@ public class SeedanceClient {
     }
 
     public void cancel(String taskId, ProviderConfigBO providerConfigBO) {
-        GenerationProperties.Seedance seedance = resolveSeedance(providerConfigBO);
+        ProviderConfigBO seedance = resolveSeedance(providerConfigBO);
         if (StrUtil.isBlank(taskId)) {
             throw new BusinessException("Seedance 任务 ID 不能为空");
         }
@@ -264,32 +260,27 @@ public class SeedanceClient {
         return null;
     }
 
-    private RestClient restClient() {
-        return restClient(properties.getSeedance());
-    }
-
-    private RestClient restClient(GenerationProperties.Seedance seedance) {
+    private RestClient restClient(ProviderConfigBO seedance) {
         return restClientBuilder.baseUrl(seedance.getBaseUrl()).build();
     }
 
-    private boolean isSeedanceConfigured(GenerationProperties.Seedance seedance) {
+    private boolean isSeedanceConfigured(ProviderConfigBO seedance) {
         return StrUtil.isNotBlank(seedance.getBaseUrl())
                 && StrUtil.isNotBlank(seedance.getApiKey())
                 && StrUtil.isNotBlank(seedance.getModel());
     }
 
-    private GenerationProperties.Seedance resolveSeedance(ProviderConfigBO providerConfigBO) {
-        GenerationProperties.Seedance baseSeedance = properties.getSeedance();
-        GenerationProperties.Seedance seedance = new GenerationProperties.Seedance();
-        seedance.setBaseUrl(resolveConfigValue(providerConfigBO == null ? null : providerConfigBO.getBaseUrl(), baseSeedance.getBaseUrl()));
-        seedance.setApiKey(resolveConfigValue(providerConfigBO == null ? null : providerConfigBO.getApiKey(), baseSeedance.getApiKey()));
-        seedance.setModel(resolveConfigValue(providerConfigBO == null ? null : providerConfigBO.getModel(), baseSeedance.getModel()));
-        seedance.setPollIntervalSeconds(baseSeedance.getPollIntervalSeconds());
+    private ProviderConfigBO resolveSeedance(ProviderConfigBO providerConfigBO) {
+        ProviderConfigBO seedance = new ProviderConfigBO();
+        // Seedance 核心参数只允许来自管理员后台模型配置，避免部署配置覆盖数据库里的模型策略。
+        seedance.setBaseUrl(trimToEmpty(providerConfigBO == null ? null : providerConfigBO.getBaseUrl()));
+        seedance.setApiKey(trimToEmpty(providerConfigBO == null ? null : providerConfigBO.getApiKey()));
+        seedance.setModel(trimToEmpty(providerConfigBO == null ? null : providerConfigBO.getModel()));
         return seedance;
     }
 
-    private String resolveConfigValue(String requestValue, String propertyValue) {
-        return StrUtil.isNotBlank(requestValue) ? requestValue.trim() : propertyValue;
+    private String trimToEmpty(String value) {
+        return StrUtil.isNotBlank(value) ? value.trim() : "";
     }
 
     private Map<?, ?> parseSeedanceResponse(String rawResponse, String scene, String taskId) {

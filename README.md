@@ -10,24 +10,19 @@ Vue3 + Spring Boot 的文生图 / 文生视频工作台。
 - 管理员后台维护图片/视频剩余次数和模型服务配置。
 - 不再创建本地生成会话，不再串联“参考图 -> 关键帧 -> 视频”的流程。
 
-## MySQL 配置
+## 应用配置
 
-后端使用 MySQL 持久化用户信息。默认连接本机 MySQL 的 `keyframe_video_studio` 库：
-
-```properties
-MYSQL_URL=jdbc:mysql://localhost:3306/keyframe_video_studio?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-MYSQL_USERNAME=root
-MYSQL_PASSWORD=
-```
-
-应用启动时会按 `src/main/resources/schema.sql` 确认 `app_user`、`operation_log`、`generation_task`、`model_config` 表存在。用户密码按当前产品要求明文保存到 `password` 字段。单表用户读写、模型配置和生成操作日志写入使用 MyBatis-Plus；后续如果出现关联查询，再通过 MyBatis Mapper XML 承载 SQL。
-
-如果本机 MySQL 账号不是 `root` 空密码，只需要改环境变量：
+后端真实配置拆成公共、dev、prod 三份，并都已加入 `.gitignore`，不要提交到 Git。仓库只保留对应的 `.example.yml` 示例；首次拉取项目后复制一份并填写真实值：
 
 ```powershell
-$env:MYSQL_USERNAME="你的账号"
-$env:MYSQL_PASSWORD="你的密码"
+Copy-Item src/main/resources/application.example.yml src/main/resources/application.yml
+Copy-Item src/main/resources/application-dev.example.yml src/main/resources/application-dev.yml
+Copy-Item src/main/resources/application-prod.example.yml src/main/resources/application-prod.yml
 ```
+
+`application.yml` 放公共配置和默认激活 `dev`；`application-dev.yml` 放本机 MySQL/Redis 连接；`application-prod.yml` 放 Docker/服务器 MySQL/Redis 连接。需要填写的真实值包括 MySQL 账号密码、JWT 签名密钥、OSS AccessKey 和 Bucket 信息。图片/视频厂商的 `base-url`、`api-key`、`model` 不再写入 yml，由管理员在后台“模型配置”页面维护并落库。
+
+应用启动时会按 `src/main/resources/schema.sql` 确认 `app_user`、`operation_log`、`generation_task`、`model_config` 表存在。用户密码按当前产品要求明文保存到 `password` 字段。单表用户读写、模型配置和生成操作日志写入使用 MyBatis-Plus；后续如果出现关联查询，再通过 MyBatis Mapper XML 承载 SQL。
 
 ## 管理员配置
 
@@ -56,6 +51,42 @@ npm run dev
 ```
 
 访问 `http://localhost:5173`。
+
+## Docker 部署
+
+Docker 部署使用 `docker-compose.yml` 编排 `web`、`app`、`mysql`、`redis` 四个服务。后端容器会只读挂载 `src/main/resources/application.yml` 和 `src/main/resources/application-prod.yml` 到 `/app/config/`，并启用 `prod` profile；应用密钥仍然只写在 yml 文件里。
+
+`.env` 只保留 Docker 初始化 MySQL 容器和端口映射所需的少量参数，不再保存 JWT、OSS 或厂商模型密钥；模板见 `.env.example`。
+
+```bash
+cp .env.example .env
+cp src/main/resources/application.example.yml src/main/resources/application.yml
+cp src/main/resources/application-prod.example.yml src/main/resources/application-prod.yml
+docker compose up -d --build
+```
+
+容器职责：
+
+- `web`：Nginx 静态前端和 `/api` 反向代理，包含生成接口限流。
+- `app`：Spring Boot 后端，只在 Docker 网络内暴露 `8080`。
+- `mysql`：持久化业务数据，数据保存在 Docker volume。
+- `redis`：生成任务提交防重分布式锁，数据保存在 Docker volume。
+
+常用命令：
+
+```bash
+docker compose ps
+docker compose logs -f app
+docker compose restart app
+```
+
+当前部署流转：
+
+- 本地准备代码和真实配置文件，真实 `application.yml`、`application-dev.yml`、`application-prod.yml`、`.env` 不提交 Git。
+- 上传代码到服务器部署目录，服务器部署目录也要有自己的 `src/main/resources/application.yml`、`src/main/resources/application-prod.yml` 和 `.env`。
+- 在服务器执行镜像构建，后端镜像由 `Dockerfile` 构建，前端镜像由 `frontend/Dockerfile` 构建。
+- 运行容器时，`app` 容器读取挂载进去的 `/app/config/application.yml` 和 `/app/config/application-prod.yml`，`web` 容器暴露 80 并反向代理 `/api` 到后端。
+- 后续只改 yml 配置时，通常重启后端容器即可；改代码才需要重新构建镜像。
 
 ## API
 

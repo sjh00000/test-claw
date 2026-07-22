@@ -1,0 +1,88 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: test-claw-mysql
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "${MYSQL_HOST_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - test_claw_net
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: test-claw-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - test_claw_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: test-claw-app:latest
+    container_name: test-claw-app
+    restart: unless-stopped
+    command: ["--spring.profiles.active=prod"]
+    volumes:
+      - ./src/main/resources/application.yml:/app/config/application.yml:ro
+      - ./src/main/resources/application-prod.yml:/app/config/application-prod.yml:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      test_claw_net:
+        aliases:
+          - app
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: test-claw-web:latest
+    container_name: test-claw-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_HTTP_PORT:-80}:80"
+    volumes:
+      - ./docker-data/nginx/logs:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - test_claw_net
+
+volumes:
+  mysql_data:
+    name: test-claw-mysql-data
+  redis_data:
+    name: test-claw-redis-data
+
+networks:
+  test_claw_net:
+    name: test-claw-net

@@ -77,7 +77,7 @@ public class ImageProviderClient {
             String imageSize,
             String imageQuality,
             ProviderConfigBO providerConfigBO) {
-        GenerationProperties.ImageProvider provider = resolveImageProvider(providerConfigBO);
+        ProviderConfigBO provider = resolveImageProvider(providerConfigBO);
         if (!isImageProviderConfigured(provider)) {
             // 厂商 base-url、api-key、model 任一缺失都不发起真实调用，避免带空模型或凭证请求外部服务。
             log.info("gpt-image2 未配置厂商参数，返回占位参考图编辑结果");
@@ -91,14 +91,14 @@ public class ImageProviderClient {
             String finalPrompt = buildPromptWithReferenceNames(prompt, referenceImages);
             MultipartBodyBuilder bodyBuilder = buildMultipartBody(provider, referenceImages, finalPrompt, imageSize, imageQuality);
             log.info("请求 image-2 编辑接口，endpoint={}, model={}, size={}, quality={}, actualPrompt={}, referenceImageCount={}, referenceImages={}",
-                    provider.getEditEndpoint(), provider.getModel(), resolveSize(imageSize), resolveQuality(imageQuality),
+                    properties.getImageProvider().getEditEndpoint(), provider.getModel(), resolveSize(imageSize), resolveQuality(imageQuality),
                     finalPrompt, referenceImages.size(), summarizeReferenceImages(referenceImages));
             imageUrl = restClientBuilder
                     .baseUrl(provider.getBaseUrl())
                     .requestFactory(createImageRequestFactory())
                     .build()
                     .post()
-                    .uri(provider.getEditEndpoint())
+                    .uri(properties.getImageProvider().getEditEndpoint())
                     .header("Authorization", "Bearer " + provider.getApiKey())
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(bodyBuilder.build())
@@ -112,8 +112,8 @@ public class ImageProviderClient {
             throw ex;
         } catch (ResourceAccessException ex) {
             log.warn("gpt-image2 调用超时或网络不可达，timeoutSeconds={}, reason={}",
-                    provider.getRequestTimeoutSeconds(), ex.getMessage());
-            throw new BusinessException("image-2 调用超过 " + provider.getRequestTimeoutSeconds() + " 秒，请重新生成图片", ex);
+                    properties.getImageProvider().getRequestTimeoutSeconds(), ex.getMessage());
+            throw new BusinessException("image-2 调用超过 " + properties.getImageProvider().getRequestTimeoutSeconds() + " 秒，请重新生成图片", ex);
         } catch (Exception ex) {
             log.warn("gpt-image2 调用失败，reason={}", ex.getMessage());
             throw new BusinessException("gpt-image2 调用失败", ex);
@@ -130,7 +130,7 @@ public class ImageProviderClient {
     }
 
     public String generateReferenceImage(String prompt, String imageSize, String imageQuality, ProviderConfigBO providerConfigBO) {
-        GenerationProperties.ImageProvider provider = resolveImageProvider(providerConfigBO);
+        ProviderConfigBO provider = resolveImageProvider(providerConfigBO);
         if (!isImageProviderConfigured(provider)) {
             // 厂商 base-url、api-key、model 任一缺失都不发起真实调用，保证前端可以先完成参考图流程联调。
             log.info("image-2 未配置厂商参数，返回占位主体参考图");
@@ -149,13 +149,13 @@ public class ImageProviderClient {
         ScheduledFuture<?> monitorFuture = startImageCallMonitor("image-2 生成接口", null, startedAt);
         try {
             log.info("请求 image-2 生成接口，endpoint={}, model={}, size={}, quality={}, actualPrompt={}",
-                    provider.getGenerationEndpoint(), provider.getModel(), resolveSize(imageSize), resolveQuality(imageQuality), prompt);
+                    properties.getImageProvider().getGenerationEndpoint(), provider.getModel(), resolveSize(imageSize), resolveQuality(imageQuality), prompt);
             imageUrl = restClientBuilder
                     .baseUrl(provider.getBaseUrl())
                     .requestFactory(createImageRequestFactory())
                     .build()
                     .post()
-                    .uri(provider.getGenerationEndpoint())
+                    .uri(properties.getImageProvider().getGenerationEndpoint())
                     .header("Authorization", "Bearer " + provider.getApiKey())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(payload)
@@ -169,8 +169,8 @@ public class ImageProviderClient {
             throw ex;
         } catch (ResourceAccessException ex) {
             log.warn("image-2 主体参考图生成超时或网络不可达，timeoutSeconds={}, reason={}",
-                    provider.getRequestTimeoutSeconds(), ex.getMessage());
-            throw new BusinessException("image-2 调用超过 " + provider.getRequestTimeoutSeconds() + " 秒，请重新生成参考图", ex);
+                    properties.getImageProvider().getRequestTimeoutSeconds(), ex.getMessage());
+            throw new BusinessException("image-2 调用超过 " + properties.getImageProvider().getRequestTimeoutSeconds() + " 秒，请重新生成参考图", ex);
         } catch (Exception ex) {
             log.warn("image-2 主体参考图生成失败，reason={}", ex.getMessage());
             throw new BusinessException("image-2 主体参考图生成失败", ex);
@@ -198,28 +198,23 @@ public class ImageProviderClient {
         }
     }
 
-    private boolean isImageProviderConfigured(GenerationProperties.ImageProvider provider) {
+    private boolean isImageProviderConfigured(ProviderConfigBO provider) {
         return StrUtil.isNotBlank(provider.getBaseUrl())
                 && StrUtil.isNotBlank(provider.getApiKey())
                 && StrUtil.isNotBlank(provider.getModel());
     }
 
-    private GenerationProperties.ImageProvider resolveImageProvider(ProviderConfigBO providerConfigBO) {
-        GenerationProperties.ImageProvider baseProvider = properties.getImageProvider();
-        GenerationProperties.ImageProvider provider = new GenerationProperties.ImageProvider();
-        provider.setBaseUrl(resolveConfigValue(providerConfigBO == null ? null : providerConfigBO.getBaseUrl(), baseProvider.getBaseUrl()));
-        provider.setApiKey(resolveConfigValue(providerConfigBO == null ? null : providerConfigBO.getApiKey(), baseProvider.getApiKey()));
-        provider.setModel(resolveConfigValue(providerConfigBO == null ? null : providerConfigBO.getModel(), baseProvider.getModel()));
-        provider.setEditEndpoint(baseProvider.getEditEndpoint());
-        provider.setGenerationEndpoint(baseProvider.getGenerationEndpoint());
-        provider.setSize(baseProvider.getSize());
-        provider.setQuality(baseProvider.getQuality());
-        provider.setRequestTimeoutSeconds(baseProvider.getRequestTimeoutSeconds());
+    private ProviderConfigBO resolveImageProvider(ProviderConfigBO providerConfigBO) {
+        ProviderConfigBO provider = new ProviderConfigBO();
+        // 厂商核心参数只允许来自管理员后台模型配置，避免 application.yml 与数据库出现两套来源。
+        provider.setBaseUrl(trimToEmpty(providerConfigBO == null ? null : providerConfigBO.getBaseUrl()));
+        provider.setApiKey(trimToEmpty(providerConfigBO == null ? null : providerConfigBO.getApiKey()));
+        provider.setModel(trimToEmpty(providerConfigBO == null ? null : providerConfigBO.getModel()));
         return provider;
     }
 
-    private String resolveConfigValue(String requestValue, String propertyValue) {
-        return StrUtil.isNotBlank(requestValue) ? requestValue.trim() : propertyValue;
+    private String trimToEmpty(String value) {
+        return StrUtil.isNotBlank(value) ? value.trim() : "";
     }
 
     private long elapsedSeconds(Instant startedAt) {
@@ -227,7 +222,7 @@ public class ImageProviderClient {
     }
 
     private MultipartBodyBuilder buildMultipartBody(
-            GenerationProperties.ImageProvider provider,
+            ProviderConfigBO provider,
             List<ReferenceImage> referenceImages,
             String finalPrompt,
             String imageSize,

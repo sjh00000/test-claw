@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    # dev 连接本机 MySQL。
+    url: jdbc:mysql://localhost:3306/keyframe_video_studio?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: root
+    password:
+  data:
+    redis:
+      # dev 连接本机 Redis。
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 2000ms
