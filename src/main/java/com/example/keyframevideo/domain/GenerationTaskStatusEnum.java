@@ -1,5 +1,6 @@
 package com.example.keyframevideo.domain;
 
+import java.util.List;
 import lombok.Getter;
 
 @Getter
@@ -49,5 +50,9 @@ public enum GenerationTaskStatusEnum {
             }
         }
         return code;
+    }
+
+    public static List<String> activeCodes() {
+        return List.of(SUBMITTED.getCode(), RUNNING.getCode());
     }
 }

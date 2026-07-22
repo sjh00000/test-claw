@@ -10,6 +10,7 @@ public class GenerationProperties {
     private final ImageProvider imageProvider = new ImageProvider();
     private final Seedance seedance = new Seedance();
     private final Oss oss = new Oss();
+    private final Task task = new Task();
 
     @Data
     public static class ImageProvider {
@@ -58,5 +59,11 @@ public class GenerationProperties {
         private String bucketDomain = "";
         // 生成结果在 OSS 中的统一目录前缀。
         private String objectPrefix = "test-claw";
+    }
+
+    @Data
+    public static class Task {
+        // 紧凑雪花 ID 的 workerId，多实例部署时每个实例必须配置不同值，范围 0-15。
+        private long workerId = 1L;
     }
 }

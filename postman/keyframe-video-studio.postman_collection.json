@@ -218,6 +218,23 @@
       }
     },
     {
+      "name": "任务中心-查询当前活跃任务",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/generation/tasks/active",
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
       "name": "文生图（无参考图）",
       "event": [
         {

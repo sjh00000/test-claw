@@ -14,6 +14,14 @@ spring:
       connection-timeout: ${MYSQL_CONNECTION_TIMEOUT_MS:30000}
       idle-timeout: ${MYSQL_IDLE_TIMEOUT_MS:600000}
       max-lifetime: ${MYSQL_MAX_LIFETIME_MS:1800000}
+  data:
+    redis:
+      # Redis 仅用于生成任务提交防重的分布式锁，后续多实例部署时共享同一把用户维度锁。
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT_MS:2000ms}
   sql:
     init:
       mode: always
@@ -77,3 +85,6 @@ generation:
     bucket-domain: ${ALIYUN_OSS_BUCKET_DOMAIN:https://videos-sun.oss-cn-chengdu.aliyuncs.com}
     # 生成结果在 OSS 中的统一目录前缀。
     object-prefix: ${ALIYUN_OSS_OBJECT_PREFIX:test-claw}
+  task:
+    # 任务 ID 使用紧凑雪花算法，多实例部署时每个实例配置不同 workerId，范围 0-15。
+    worker-id: ${GENERATION_TASK_WORKER_ID:1}

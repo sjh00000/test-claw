@@ -1,6 +1,6 @@
 <script setup>
 import { Download, Film, Image as ImageIcon, Minus, Plus, Video as VideoIcon, WandSparkles } from '@lucide/vue'
-import { onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import GenerationStatus from '../components/GenerationStatus.vue'
 import ModeSwitch from '../components/ModeSwitch.vue'
 import PanelHeading from '../components/PanelHeading.vue'
@@ -9,13 +9,15 @@ import {
   IMAGE_QUALITY_OPTIONS,
   IMAGE_SIZE_OPTIONS,
   STATUS_POLL_INTERVAL_MS,
+  SUBMIT_DEBOUNCE_MS,
   VIDEO_DURATION_MAX,
   VIDEO_DURATION_MIN,
   VIDEO_RATIO_OPTIONS,
   VIDEO_RESOLUTION_OPTIONS,
+  isActiveGenerationStatus,
   isTerminalGenerationStatus
 } from '../constants/generation'
-import { generateImage, generateVideo, queryTaskStatus, queryVideoStatus } from '../lib/api'
+import { generateImage, generateVideo, getActiveTask, queryTaskStatus, queryVideoStatus } from '../lib/api'
 import { downloadUrl } from '../utils/download'
 import { referenceImagePayload } from '../utils/referenceImages'
 
@@ -28,8 +30,10 @@ const imageResult = ref(null)
 const videoResult = ref(null)
 const imageStatusPolling = ref(false)
 const videoStatusPolling = ref(false)
+const activeTaskLoading = ref(false)
 let imageStatusTimer = null
 let videoStatusTimer = null
+let lastSubmitAt = 0
 
 const imageForm = reactive({
   prompt: '',
@@ -47,10 +51,17 @@ const videoForm = reactive({
   referenceImages: []
 })
 
+const imageTaskActive = computed(() => imageLoading.value || imageStatusPolling.value || isActiveGenerationStatus(imageResult.value))
+const videoTaskActive = computed(() => videoLoading.value || videoStatusPolling.value || isActiveGenerationStatus(videoResult.value))
+const hasActiveTask = computed(() => activeTaskLoading.value || imageTaskActive.value || videoTaskActive.value)
+
 // 生成接口只返回任务 ID，真实结果通过任务轮询回填，避免同步等待厂商长耗时响应。
 async function submitImage() {
   if (!imageForm.prompt.trim()) {
     emit('error', '图片提示词不能为空')
+    return
+  }
+  if (shouldBlockSubmit()) {
     return
   }
   imageLoading.value = true
@@ -74,6 +85,9 @@ async function submitImage() {
 async function submitVideo() {
   if (!videoForm.prompt.trim()) {
     emit('error', '视频提示词不能为空')
+    return
+  }
+  if (shouldBlockSubmit()) {
     return
   }
   videoLoading.value = true
@@ -185,6 +199,64 @@ async function pollVideoStatus(taskId) {
   videoStatusTimer = window.setTimeout(() => pollVideoStatus(taskId), STATUS_POLL_INTERVAL_MS)
 }
 
+async function loadActiveTask() {
+  activeTaskLoading.value = true
+  try {
+    const activeTask = await getActiveTask()
+    if (!activeTask?.taskId) {
+      return
+    }
+    // 刷新或重新打开页面时恢复用户自己的执行中任务，避免旧任务还在跑时前端允许再次提交。
+    if (activeTask.taskType === 'TEXT_TO_IMAGE') {
+      activeMode.value = 'image'
+      imageResult.value = buildImageResult(activeTask)
+      startImageStatusPolling(activeTask.taskId)
+      return
+    }
+    if (activeTask.taskType === 'TEXT_TO_VIDEO') {
+      activeMode.value = 'video'
+      videoResult.value = buildVideoResult(activeTask)
+      startVideoStatusPolling(activeTask.taskId)
+    }
+  } catch (error) {
+    emit('error', error.message)
+  } finally {
+    activeTaskLoading.value = false
+  }
+}
+
+function buildImageResult(task) {
+  return {
+    taskId: task.taskId,
+    status: task.statusName || task.status,
+    imageUrl: task.resultUrl,
+    failReason: task.failReason
+  }
+}
+
+function buildVideoResult(task) {
+  return {
+    taskId: task.taskId,
+    providerTaskId: task.providerTaskId,
+    status: task.statusName || task.status,
+    videoUrl: task.resultUrl,
+    failReason: task.failReason
+  }
+}
+
+function shouldBlockSubmit() {
+  if (hasActiveTask.value) {
+    emit('error', '当前已有生成任务正在执行，请等待任务完成后再创建新任务')
+    return true
+  }
+  const now = Date.now()
+  if (now - lastSubmitAt < SUBMIT_DEBOUNCE_MS) {
+    return true
+  }
+  lastSubmitAt = now
+  return false
+}
+
 function clampVideoDuration(value) {
   // 时长限制前后端保持一致，防止浏览器输入异常值后提交非法任务。
   const duration = Number(value)
@@ -196,6 +268,23 @@ function clampVideoDuration(value) {
 function adjustVideoDuration(delta) {
   clampVideoDuration(videoForm.duration + delta)
 }
+
+function submitButtonText(defaultText, loadingText, loading) {
+  if (activeTaskLoading.value) {
+    return '检查任务中'
+  }
+  if (loading) {
+    return loadingText
+  }
+  if (imageTaskActive.value || videoTaskActive.value) {
+    return '任务执行中'
+  }
+  return defaultText
+}
+
+onMounted(() => {
+  loadActiveTask()
+})
 
 onBeforeUnmount(() => {
   stopImageStatusPolling()
@@ -236,9 +325,9 @@ onBeforeUnmount(() => {
           </label>
         </div>
         <ReferenceUploader input-id="imageRefs" :items="imageForm.referenceImages" />
-        <button class="primary-action" type="button" :disabled="imageLoading" @click="submitImage">
+        <button class="primary-action" type="button" :disabled="hasActiveTask" @click="submitImage">
           <WandSparkles :size="17" />
-          {{ imageLoading ? '生成中' : '生成图片' }}
+          {{ submitButtonText('生成图片', '生成中', imageLoading) }}
         </button>
         <GenerationStatus :task-id="imageResult?.taskId" :status="imageResult?.status" :polling="imageStatusPolling" />
         <p v-if="imageResult?.failReason" class="error-message compact">{{ imageResult.failReason }}</p>
@@ -293,9 +382,9 @@ onBeforeUnmount(() => {
         </label>
         <ReferenceUploader input-id="videoRefs" :items="videoForm.referenceImages" />
         <div class="button-row">
-          <button class="primary-action" type="button" :disabled="videoLoading" @click="submitVideo">
+          <button class="primary-action" type="button" :disabled="hasActiveTask" @click="submitVideo">
             <VideoIcon :size="17" />
-            {{ videoLoading ? '处理中' : '提交视频任务' }}
+            {{ submitButtonText('提交视频任务', '处理中', videoLoading) }}
           </button>
         </div>
         <GenerationStatus :task-id="videoResult?.taskId" :status="videoResult?.status" :polling="videoStatusPolling" />

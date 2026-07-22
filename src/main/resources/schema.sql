@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS generation_task (
     task_type VARCHAR(64) NOT NULL,
     provider_task_id VARCHAR(128) NULL,
     status VARCHAR(32) NOT NULL,
+    active_user_id BIGINT GENERATED ALWAYS AS (CASE WHEN status IN ('SUBMITTED', 'RUNNING') THEN user_id ELSE NULL END) STORED,
     result_url LONGTEXT NULL,
     fail_reason VARCHAR(1024) NULL,
     request_body TEXT NULL,
@@ -38,6 +39,8 @@ CREATE TABLE IF NOT EXISTS generation_task (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_generation_task_user_id (user_id),
+    INDEX idx_generation_task_user_status (user_id, status),
+    UNIQUE INDEX uk_generation_task_active_user (active_user_id),
     INDEX idx_generation_task_type_status (task_type, status),
     INDEX idx_generation_task_provider_task_id (provider_task_id),
     INDEX idx_generation_task_created_at (created_at)

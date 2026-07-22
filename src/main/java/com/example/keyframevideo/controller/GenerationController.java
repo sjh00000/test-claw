@@ -53,6 +53,12 @@ public class GenerationController {
         return R.ok(generationFacade.queryTaskStatus(request));
     }
 
+    @PostMapping("/tasks/active")
+    public R<GenerationTaskVO> getCurrentActiveTask() {
+        // 生成页恢复时使用当前登录用户解析活跃任务，前端无需也不能传 userId。
+        return R.ok(generationFacade.getCurrentActiveTask());
+    }
+
     @PostMapping("/tasks")
     public R<List<GenerationTaskVO>> listTasks(@Valid @RequestBody GenerationTaskQueryBO request) {
         return R.ok(generationFacade.listTasks(request));

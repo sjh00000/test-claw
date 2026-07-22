@@ -17,12 +17,14 @@ import com.example.keyframevideo.domain.SeedanceTaskStatus;
 import com.example.keyframevideo.domain.ServiceTypeEnum;
 import com.example.keyframevideo.domain.UserInfo;
 import com.example.keyframevideo.exception.BusinessException;
+import com.example.keyframevideo.service.DistributedLockService;
 import com.example.keyframevideo.service.GenerationTaskService;
 import com.example.keyframevideo.service.ModelConfigService;
 import com.example.keyframevideo.vo.GenerationTaskVO;
 import com.example.keyframevideo.vo.ImageGenerationVO;
 import com.example.keyframevideo.vo.VideoGenerationVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -35,21 +37,26 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class GenerationFacade {
 
+    private static final String ACTIVE_TASK_LOCK_KEY_PREFIX = "generation:active-task:user:";
+    private static final Duration ACTIVE_TASK_LOCK_TTL = Duration.ofSeconds(15);
+    private static final Duration ACTIVE_TASK_LOCK_WAIT_TIMEOUT = Duration.ofSeconds(2);
+
     private final SeedanceClient seedanceClient;
     private final GenerationTaskService generationTaskService;
     private final ModelConfigService modelConfigService;
     private final GenerationAsyncFacade generationAsyncFacade;
+    private final DistributedLockService distributedLockService;
     private final ObjectMapper objectMapper;
 
     public ImageGenerationVO generateImage(TextToImageBO textToImageBO) {
         UserInfo userInfo = loadCurrentUsableUser();
         validateImageOptions(textToImageBO.getImageSize(), textToImageBO.getImageQuality());
-        assertRemainingCount(userInfo, OperationTypeEnum.TEXT_TO_IMAGE, resolveImageRemainingCount(userInfo));
-        // 先创建本地任务再异步调用厂商，接口可立即返回 taskId 给前端轮询。
-        GenerationTask generationTask = generationTaskService.createSubmittedTask(
+        String requestBody = toJson(sanitizeForStorage(textToImageBO));
+        GenerationTask generationTask = createSubmittedTaskWithLock(
                 userInfo,
                 OperationTypeEnum.TEXT_TO_IMAGE,
-                toJson(sanitizeForStorage(textToImageBO)));
+                requestBody,
+                () -> assertRemainingCount(userInfo, OperationTypeEnum.TEXT_TO_IMAGE, resolveImageRemainingCount(userInfo)));
         generationAsyncFacade.generateImageAsync(generationTask.getId(), userInfo.getId(), textToImageBO);
 
         ImageGenerationVO imageGenerationVO = new ImageGenerationVO();
@@ -62,12 +69,12 @@ public class GenerationFacade {
     public VideoGenerationVO generateVideo(TextToVideoBO textToVideoBO) {
         UserInfo userInfo = loadCurrentUsableUser();
         validateVideoOptions(textToVideoBO);
-        assertRemainingCount(userInfo, OperationTypeEnum.TEXT_TO_VIDEO, resolveVideoRemainingCount(userInfo));
-        // 视频厂商本身也是异步任务，本地任务用于统一承载状态、额度扣减和最终下载地址。
-        GenerationTask generationTask = generationTaskService.createSubmittedTask(
+        String requestBody = toJson(sanitizeForStorage(textToVideoBO));
+        GenerationTask generationTask = createSubmittedTaskWithLock(
                 userInfo,
                 OperationTypeEnum.TEXT_TO_VIDEO,
-                toJson(sanitizeForStorage(textToVideoBO)));
+                requestBody,
+                () -> assertRemainingCount(userInfo, OperationTypeEnum.TEXT_TO_VIDEO, resolveVideoRemainingCount(userInfo)));
         generationAsyncFacade.submitVideoAsync(generationTask.getId(), userInfo.getId(), textToVideoBO);
 
         VideoGenerationVO videoGenerationVO = new VideoGenerationVO();
@@ -99,6 +106,18 @@ public class GenerationFacade {
                 .stream()
                 .map(this::toTaskVO)
                 .toList();
+    }
+
+    public GenerationTaskVO getCurrentActiveTask() {
+        UserInfo userInfo = loadCurrentUsableUser();
+        GenerationTask activeTask = generationTaskService.getActiveTask(userInfo.getId());
+        if (activeTask == null) {
+            return null;
+        }
+        // 页面恢复时顺手刷新视频任务，避免旧任务已在厂商完成但本地状态还阻塞新任务。
+        refreshVideoTaskIfNecessary(activeTask);
+        activeTask = generationTaskService.getActiveTask(userInfo.getId());
+        return activeTask == null ? null : toTaskVO(activeTask);
     }
 
     private GenerationTask refreshAndLoadTask(Long taskId) {
@@ -138,6 +157,33 @@ public class GenerationFacade {
                 taskStatus.getVideoUrl(),
                 taskStatus.getFailReason(),
                 toJson(videoGenerationVO));
+    }
+
+    private void assertNoActiveTask(UserInfo userInfo) {
+        GenerationTask activeTask = generationTaskService.getActiveTask(userInfo.getId());
+        if (activeTask == null) {
+            return;
+        }
+        // 创建新任务前刷新一次视频旧任务；若刷新后仍是活跃状态，说明用户确实已有任务在执行。
+        refreshVideoTaskIfNecessary(activeTask);
+        activeTask = generationTaskService.getActiveTask(userInfo.getId());
+        if (activeTask != null) {
+            throw new BusinessException("当前已有生成任务正在执行，请等待任务完成后再创建新任务");
+        }
+    }
+
+    private GenerationTask createSubmittedTaskWithLock(
+            UserInfo userInfo,
+            OperationTypeEnum operationTypeEnum,
+            String requestBody,
+            Runnable remainingCountValidator) {
+        String lockKey = ACTIVE_TASK_LOCK_KEY_PREFIX + userInfo.getId();
+        return distributedLockService.executeWithLock(lockKey, ACTIVE_TASK_LOCK_TTL, ACTIVE_TASK_LOCK_WAIT_TIMEOUT, () -> {
+            remainingCountValidator.run();
+            assertNoActiveTask(userInfo);
+            // 只在“检查活跃任务 + 创建本地任务”期间持锁；厂商调用放到异步线程，避免长时间占用分布式锁。
+            return generationTaskService.createSubmittedTaskIfNoActiveTask(userInfo, operationTypeEnum, requestBody);
+        });
     }
 
     private void validateImageOptions(String imageSize, String imageQuality) {

@@ -11,7 +11,11 @@ public interface GenerationTaskService extends IService<GenerationTask> {
 
     GenerationTask createSubmittedTask(UserInfo userInfo, OperationTypeEnum operationTypeEnum, String requestBody);
 
+    GenerationTask createSubmittedTaskIfNoActiveTask(UserInfo userInfo, OperationTypeEnum operationTypeEnum, String requestBody);
+
     GenerationTask getRequiredById(Long taskId);
+
+    GenerationTask getActiveTask(Long userId);
 
     GenerationTask getRequiredVisibleTask(Long taskId, UserInfo userInfo);
 

@@ -60,6 +60,13 @@ export function queryTaskStatus(data) {
   })
 }
 
+export function getActiveTask() {
+  return request('/generation/tasks/active', {
+    method: 'POST',
+    body: JSON.stringify({})
+  })
+}
+
 export function listTasks(data) {
   return request('/generation/tasks', {
     method: 'POST',
