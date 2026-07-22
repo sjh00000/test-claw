@@ -20,13 +20,7 @@ MYSQL_USERNAME=root
 MYSQL_PASSWORD=
 ```
 
-完整建库建表 SQL 在 `sql/keyframe_video_studio.sql`。已有库升级可执行 `sql/admin_features_migration.sql`，该脚本会重建 `app_user` 和 `operation_log`，旧用户与旧生成日志会被清空，模型配置表保留。应用启动时也会按 `src/main/resources/schema.sql` 确认 `app_user`、`operation_log`、`model_config` 表存在。用户密码按当前产品要求明文保存到 `password` 字段。单表用户读写、模型配置和生成操作日志写入使用 MyBatis-Plus；后续如果出现关联查询，再通过 MyBatis Mapper XML 承载 SQL。
-
-当前本地 MySQL 没有注册成 Windows 服务。如果重启后连接出现 `Can't connect to MySQL server on 'localhost:3306' (10061)`，先执行：
-
-```powershell
-.\scripts\start-mysql.ps1
-```
+应用启动时会按 `src/main/resources/schema.sql` 确认 `app_user`、`operation_log`、`generation_task`、`model_config` 表存在。用户密码按当前产品要求明文保存到 `password` 字段。单表用户读写、模型配置和生成操作日志写入使用 MyBatis-Plus；后续如果出现关联查询，再通过 MyBatis Mapper XML 承载 SQL。
 
 如果本机 MySQL 账号不是 `root` 空密码，只需要改环境变量：
 
