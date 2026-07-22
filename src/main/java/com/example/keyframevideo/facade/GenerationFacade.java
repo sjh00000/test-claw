@@ -45,6 +45,7 @@ public class GenerationFacade {
         UserInfo userInfo = loadCurrentUsableUser();
         validateImageOptions(textToImageBO.getImageSize(), textToImageBO.getImageQuality());
         assertRemainingCount(userInfo, OperationTypeEnum.TEXT_TO_IMAGE, resolveImageRemainingCount(userInfo));
+        // 先创建本地任务再异步调用厂商，接口可立即返回 taskId 给前端轮询。
         GenerationTask generationTask = generationTaskService.createSubmittedTask(
                 userInfo,
                 OperationTypeEnum.TEXT_TO_IMAGE,
@@ -62,6 +63,7 @@ public class GenerationFacade {
         UserInfo userInfo = loadCurrentUsableUser();
         validateVideoOptions(textToVideoBO);
         assertRemainingCount(userInfo, OperationTypeEnum.TEXT_TO_VIDEO, resolveVideoRemainingCount(userInfo));
+        // 视频厂商本身也是异步任务，本地任务用于统一承载状态、额度扣减和最终下载地址。
         GenerationTask generationTask = generationTaskService.createSubmittedTask(
                 userInfo,
                 OperationTypeEnum.TEXT_TO_VIDEO,
@@ -102,6 +104,7 @@ public class GenerationFacade {
     private GenerationTask refreshAndLoadTask(Long taskId) {
         UserInfo userInfo = loadCurrentUsableUser();
         GenerationTask generationTask = generationTaskService.getRequiredVisibleTask(taskId, userInfo);
+        // 视频结果只在用户查询本地任务时按需刷新，避免后台无界轮询厂商接口。
         refreshVideoTaskIfNecessary(generationTask);
         return generationTaskService.getRequiredVisibleTask(taskId, userInfo);
     }
@@ -225,6 +228,7 @@ public class GenerationFacade {
     }
 
     private Object sanitizeForStorage(Object value) {
+        // 请求入参落库前要脱敏/压缩大字段，尤其是参考图 data URL，避免日志和任务表膨胀。
         Object jsonValue = objectMapper.convertValue(value, Object.class);
         return sanitizeJsonValue(jsonValue);
     }

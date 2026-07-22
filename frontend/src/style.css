@@ -121,7 +121,7 @@ p {
 h1 {
   margin-bottom: 0;
   color: #102135;
-  font-size: clamp(30px, 3.2vw, 46px);
+  font-size: 42px;
   line-height: 1.08;
   text-shadow: 0 12px 32px rgba(74, 149, 204, 0.18);
 }
@@ -793,6 +793,10 @@ h3 {
   background: rgba(247, 252, 255, 0.72);
 }
 
+.table-field {
+  display: block;
+}
+
 .table-row.table-head {
   color: #5f7894;
   background: rgba(239, 249, 255, 0.88);
@@ -902,8 +906,13 @@ h3 {
 }
 
 @media (max-width: 720px) {
+  /* 移动端保留同一套页面能力，但把表格转成卡片，减少横向滚动和文字挤压。 */
   .studio-shell {
-    padding: 18px;
+    padding: 16px;
+  }
+
+  h1 {
+    font-size: 30px;
   }
 
   .topbar,
@@ -923,6 +932,18 @@ h3 {
 
   .admin-nav {
     width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    justify-content: flex-start;
+    scrollbar-width: none;
+  }
+
+  .admin-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-nav button {
+    flex: 0 0 auto;
   }
 
   .auth-card {
@@ -948,6 +969,45 @@ h3 {
   .inline-fields.three,
   .reference-item {
     grid-template-columns: 1fr;
+  }
+
+  .data-table {
+    overflow: visible;
+  }
+
+  .table-row.table-head {
+    display: none;
+  }
+
+  .table-row,
+  .task-table .table-row,
+  .log-table .table-row {
+    grid-template-columns: 1fr;
+    min-width: 0;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .table-row > [data-label] {
+    display: grid;
+    grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+  }
+
+  .table-row > [data-label]::before {
+    content: attr(data-label);
+    color: #6b7f95;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .table-field {
+    grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+  }
+
+  .summary-cell {
+    max-height: 150px;
   }
 
   .reference-item button {

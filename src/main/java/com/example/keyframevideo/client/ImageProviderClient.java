@@ -324,7 +324,7 @@ public class ImageProviderClient {
                     }
                 }
                 if ("b64_json".equals(fieldName)) {
-                    // 图片结果不在本地落盘，统一返回 data URL 并由任务表持久化，前端可直接预览和下载。
+                    // 厂商若返回 base64，立即上传 OSS 并返回访问 URL，任务表不再保存大体积 base64。
                     return convertB64JsonToImageUrl(parser, scene, frameIndex);
                 }
             }
@@ -341,6 +341,7 @@ public class ImageProviderClient {
         log.info("{} 响应命中 b64_json，frameIndex={}, outputMode=base64, base64Length={}",
                 scene, frameIndex, b64Json.length());
         try {
+            // 这里不落本地文件，直接把内存中的 PNG 字节交给 OSS 服务，避免服务器磁盘产生临时文件。
             byte[] imageBytes = Base64.getDecoder().decode(b64Json.getBytes(StandardCharsets.UTF_8));
             return ossStorageService.uploadGeneratedImage(imageBytes);
         } catch (IllegalArgumentException ex) {

@@ -54,11 +54,13 @@ public class UserOperationLogAspect {
                     : failureResponse(throwable)));
             operationLogService.record(operationLog);
         } catch (Exception ex) {
+            // 操作日志不能反向影响生成主流程，记录失败只打 warn 供排查。
             log.warn("用户操作日志记录失败，reason={}", ex.getMessage());
         }
     }
 
     private Object sanitizeValue(Object value) {
+        // 入参和出参写入操作日志前统一脱敏，防止参考图 base64 或大对象撑爆日志表。
         Object jsonValue = objectMapper.convertValue(value, Object.class);
         return sanitizeJsonValue(jsonValue);
     }

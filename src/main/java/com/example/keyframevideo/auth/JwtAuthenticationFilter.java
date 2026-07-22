@@ -47,6 +47,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        // token 只保存用户 ID，权限和剩余额度等动态信息每次从数据库读取，避免旧 token 携带过期用户状态。
         UserInfo userInfo = userService.getById(claims.userId());
         if (userInfo == null) {
             writeAuthFailure(response, HttpServletResponse.SC_UNAUTHORIZED, "登录用户不存在");

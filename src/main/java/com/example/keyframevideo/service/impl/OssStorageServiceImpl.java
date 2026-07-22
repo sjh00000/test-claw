@@ -32,6 +32,7 @@ public class OssStorageServiceImpl implements OssStorageService {
         }
         GenerationProperties.Oss oss = properties.getOss();
         validateOssConfig(oss);
+        // objectKey 按业务类型和日期分层，便于后续在 OSS 控制台排查单日生成结果。
         String objectKey = buildObjectKey(oss.getObjectPrefix(), "images", "png");
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentType("image/png");
@@ -54,6 +55,7 @@ public class OssStorageServiceImpl implements OssStorageService {
     }
 
     private void validateOssConfig(GenerationProperties.Oss oss) {
+        // OSS 密钥只允许从环境或部署配置读取，缺项时立即阻断，避免生成结果回退到数据库 base64。
         if (oss == null
                 || StrUtil.isBlank(oss.getEndpoint())
                 || StrUtil.isBlank(oss.getAccessKeyId())
@@ -71,6 +73,7 @@ public class OssStorageServiceImpl implements OssStorageService {
     }
 
     private String buildObjectUrl(String bucketDomain, String objectKey) {
+        // 数据库存完整访问 URL，前端预览和下载不需要理解 bucket、endpoint 与 objectKey 的拼接规则。
         String domain = bucketDomain.trim();
         if (!domain.startsWith("http://") && !domain.startsWith("https://")) {
             domain = "https://" + domain;

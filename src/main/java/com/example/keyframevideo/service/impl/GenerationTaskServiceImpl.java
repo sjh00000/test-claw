@@ -54,6 +54,7 @@ public class GenerationTaskServiceImpl extends ServiceImpl<GenerationTaskMapper,
             throw new BusinessException("系统时钟回拨，任务创建失败");
         }
         if (currentTimestamp == lastTimestamp) {
+            // 同一毫秒内用序列号区分任务，序列耗尽时等待下一毫秒保证 ID 不重复。
             sequence = (sequence + 1) & MAX_SEQUENCE;
             if (sequence == 0) {
                 currentTimestamp = waitNextMillis(lastTimestamp);
@@ -95,6 +96,7 @@ public class GenerationTaskServiceImpl extends ServiceImpl<GenerationTaskMapper,
     @Override
     public GenerationTask getRequiredVisibleTask(Long taskId, UserInfo userInfo) {
         GenerationTask generationTask = getRequiredById(taskId);
+        // 非管理员只能查看自己的任务，任务中心和单条状态查询都复用该权限边界。
         if (!isAdmin(userInfo) && !Objects.equals(generationTask.getUserId(), userInfo.getId())) {
             throw new BusinessException("无权查看该任务");
         }
@@ -146,6 +148,7 @@ public class GenerationTaskServiceImpl extends ServiceImpl<GenerationTaskMapper,
     @Transactional(rollbackFor = Exception.class)
     public void markFinished(Long taskId, GenerationTaskStatusEnum statusEnum, String resultUrl, String failReason, String responseBody) {
         GenerationTask generationTask = getRequiredById(taskId);
+        // 任务终态统一在这里写入，保证图片、视频成功/失败都使用同一套任务中心字段。
         generationTask.setStatus(statusEnum.getCode());
         generationTask.setResultUrl(resultUrl);
         generationTask.setFailReason(failReason);

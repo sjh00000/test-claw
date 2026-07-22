@@ -43,6 +43,7 @@ public class GenerationAsyncFacade {
     public void generateImageAsync(Long taskId, Long userId, TextToImageBO textToImageBO) {
         UserInfo userInfo = userService.getRequiredById(userId);
         try {
+            // 任务进入 RUNNING 后再调用厂商，前端能及时看到任务已被后台接管。
             generationTaskService.markRunning(taskId, null);
             ProviderConfigBO providerConfigBO = buildProviderConfig(ServiceTypeEnum.IMAGE);
             List<ReferenceImage> referenceImages = buildReferenceImages(textToImageBO.getReferenceImages());
@@ -60,6 +61,7 @@ public class GenerationAsyncFacade {
             generationTaskService.markFinished(taskId, GenerationTaskStatusEnum.SUCCEEDED, imageUrl, null, toJson(imageGenerationVO));
             log.info("文生图异步任务完成，userId={}, taskId={}, referenceImageCount={}", userId, taskId, referenceImages.size());
         } catch (RuntimeException ex) {
+            // 失败时同时保存用户可读原因和结构化响应，便于任务中心展示与后端排障。
             generationTaskService.markFinished(taskId, GenerationTaskStatusEnum.FAILED,
                     null, sanitizeFailure(ex.getMessage()), buildFailureResponse(ex));
             log.warn("文生图异步任务失败，userId={}, taskId={}, reason={}", userId, taskId, ex.getMessage());
@@ -85,6 +87,7 @@ public class GenerationAsyncFacade {
             log.info("文生视频异步任务已提交厂商，userId={}, taskId={}, providerTaskId={}, referenceImageCount={}",
                     userId, taskId, providerTaskId, referenceImages.size());
         } catch (RuntimeException ex) {
+            // 视频提交失败不会进入厂商轮询，直接把本地任务终结为 FAILED。
             generationTaskService.markFinished(taskId, GenerationTaskStatusEnum.FAILED,
                     null, sanitizeFailure(ex.getMessage()), buildFailureResponse(ex));
             log.warn("文生视频异步任务提交失败，userId={}, taskId={}, reason={}", userId, taskId, ex.getMessage());
@@ -92,6 +95,7 @@ public class GenerationAsyncFacade {
     }
 
     private ProviderConfigBO buildProviderConfig(ServiceTypeEnum serviceTypeEnum) {
+        // 图片/视频厂商参数由管理员配置，普通用户生成请求不能覆盖 baseUrl、apikey、model。
         ModelConfig modelConfig = modelConfigService.getEnabledConfig(serviceTypeEnum);
         if (modelConfig == null
                 || StrUtil.isBlank(modelConfig.getBaseUrl())
@@ -148,6 +152,7 @@ public class GenerationAsyncFacade {
     }
 
     private String buildFailureResponse(RuntimeException ex) {
+        // response_body 存结构化失败信息，避免后续只能从应用日志里反查厂商错误。
         return toJson(Map.of(
                 "message", sanitizeFailure(ex.getMessage()),
                 "cause", ex.getCause() == null ? "" : sanitizeFailure(ex.getCause().getMessage())

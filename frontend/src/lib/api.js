@@ -1,6 +1,7 @@
 const API_BASE = '/api'
 
 async function request(path, options = {}) {
+  // API 层集中注入 JWT，页面和组件不需要关心 Authorization 头如何拼接。
   const savedUser = JSON.parse(localStorage.getItem('studioUser') || 'null')
   const headers = {
     'Content-Type': 'application/json',
