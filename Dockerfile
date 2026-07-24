@@ -23,7 +23,7 @@ ENV TZ=Asia/Shanghai
 ENV JAVA_OPTS=""
 
 # 只把第一阶段生成的 jar 复制到运行镜像。
-COPY --from=build /workspace/target/keyframe-video-studio-0.0.1-SNAPSHOT.jar /app/app.jar
+COPY --from=build /workspace/target/aigen-studio-0.0.1-SNAPSHOT.jar /app/app.jar
 
 # 后端容器内部监听 8080，外部不直接暴露，由 web 容器反向代理。
 EXPOSE 8080

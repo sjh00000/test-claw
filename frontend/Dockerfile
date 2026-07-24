@@ -21,5 +21,6 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # 只把构建产物复制到 Nginx 静态目录，不把源码放进运行容器。
 COPY --from=build /web/dist /usr/share/nginx/html
 
-# Web 容器内部监听 80，由 docker-compose 映射到宿主机 WEB_HTTP_PORT。
+# Web 容器内部监听 80/443，由 docker-compose 映射到宿主机 HTTP/HTTPS 端口。
 EXPOSE 80
+EXPOSE 443

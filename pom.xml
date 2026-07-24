@@ -12,9 +12,9 @@
     </parent>
 
     <groupId>com.example</groupId>
-    <artifactId>keyframe-video-studio</artifactId>
+    <artifactId>aigen-studio</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>keyframe-video-studio</name>
+    <name>aigen-studio</name>
     <description>Vue3 + Spring Boot text to image and video studio</description>
 
     <properties>

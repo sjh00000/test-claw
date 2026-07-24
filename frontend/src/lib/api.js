@@ -1,8 +1,19 @@
 const API_BASE = '/api'
+export const AUTH_EXPIRED_EVENT = 'studio-auth-expired'
+
+function getSavedUser() {
+  return JSON.parse(localStorage.getItem('studioUser') || 'null')
+}
+
+function notifyAuthExpired(message) {
+  // JWT 过期属于全局登录态变化，统一通知应用壳层切回登录页，避免各页面只展示错误条。
+  localStorage.removeItem('studioUser')
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { message } }))
+}
 
 async function request(path, options = {}) {
   // API 层集中注入 JWT，页面和组件不需要关心 Authorization 头如何拼接。
-  const savedUser = JSON.parse(localStorage.getItem('studioUser') || 'null')
+  const savedUser = getSavedUser()
   const headers = {
     'Content-Type': 'application/json',
     ...(savedUser?.accessToken ? { Authorization: `Bearer ${savedUser.accessToken}` } : {}),
@@ -18,7 +29,7 @@ async function request(path, options = {}) {
   const payload = await response.json().catch(() => null)
   if (!response.ok || payload?.code !== 200) {
     if (response.status === 401) {
-      localStorage.removeItem('studioUser')
+      notifyAuthExpired(payload?.msg || '登录已过期，请重新登录')
     }
     throw new Error(payload?.msg || '请求失败')
   }

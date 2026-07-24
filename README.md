@@ -1,4 +1,4 @@
-# Text Generation Studio
+# AIGen Studio
 
 Vue3 + Spring Boot 的文生图 / 文生视频工作台。
 
@@ -54,7 +54,7 @@ npm run dev
 
 ## Docker 部署
 
-Docker 部署使用 `docker-compose.yml` 编排 `web`、`app`、`mysql`、`redis` 四个服务。后端容器会只读挂载 `src/main/resources/application.yml` 和 `src/main/resources/application-prod.yml` 到 `/app/config/`，并启用 `prod` profile；应用密钥仍然只写在 yml 文件里。
+Docker 部署使用 `docker-compose.yml` 编排 `aigen-web`、`aigen-api`、`site-mysql`、`site-redis` 四个服务。后端容器会只读挂载 `src/main/resources/application.yml` 和 `src/main/resources/application-prod.yml` 到 `/app/config/`，并启用 `prod` profile；应用密钥仍然只写在 yml 文件里。
 
 `.env` 只保留 Docker 初始化 MySQL 容器和端口映射所需的少量参数，不再保存 JWT、OSS 或厂商模型密钥；模板见 `.env.example`。
 
@@ -67,17 +67,17 @@ docker compose up -d --build
 
 容器职责：
 
-- `web`：Nginx 静态前端和 `/api` 反向代理，包含生成接口限流。
-- `app`：Spring Boot 后端，只在 Docker 网络内暴露 `8080`。
-- `mysql`：持久化业务数据，数据保存在 Docker volume。
-- `redis`：生成任务提交防重分布式锁，数据保存在 Docker volume。
+- `aigen-web`：Nginx 静态前端和 `/api` 反向代理，包含生成接口限流。
+- `aigen-api`：Spring Boot 后端，只在 Docker 网络内暴露 `8080`。
+- `site-mysql`：站点级 MySQL，AI 项目使用 `aigen_studio` 库，博客使用 `personal_blog` 库。
+- `site-redis`：站点级 Redis，当前用于生成任务提交防重分布式锁。
 
 常用命令：
 
 ```bash
 docker compose ps
-docker compose logs -f app
-docker compose restart app
+docker compose logs -f aigen-api
+docker compose restart aigen-api
 ```
 
 当前部署流转：
@@ -85,7 +85,7 @@ docker compose restart app
 - 本地准备代码和真实配置文件，真实 `application.yml`、`application-dev.yml`、`application-prod.yml`、`.env` 不提交 Git。
 - 上传代码到服务器部署目录，服务器部署目录也要有自己的 `src/main/resources/application.yml`、`src/main/resources/application-prod.yml` 和 `.env`。
 - 在服务器执行镜像构建，后端镜像由 `Dockerfile` 构建，前端镜像由 `frontend/Dockerfile` 构建。
-- 运行容器时，`app` 容器读取挂载进去的 `/app/config/application.yml` 和 `/app/config/application-prod.yml`，`web` 容器暴露 80 并反向代理 `/api` 到后端。
+- 运行容器时，`aigen-api` 容器读取挂载进去的 `/app/config/application.yml` 和 `/app/config/application-prod.yml`，`aigen-web` 容器暴露 80/443 并反向代理 `/api` 到后端。
 - 后续只改 yml 配置时，通常重启后端容器即可；改代码才需要重新构建镜像。
 
 ## API

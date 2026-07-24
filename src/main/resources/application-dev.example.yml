@@ -1,7 +1,7 @@
 spring:
   datasource:
     # dev 连接本机 MySQL。
-    url: jdbc:mysql://localhost:3306/keyframe_video_studio?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://localhost:3306/aigen_studio?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
     username: root
     password:
   data:

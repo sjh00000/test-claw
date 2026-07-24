@@ -1,8 +1,8 @@
 services:
-  mysql:
-    # MySQL 容器负责持久化用户、任务、日志、模型配置等业务数据。
+  site-mysql:
+    # 站点级 MySQL 容器，统一承载 AI 项目和博客等多个业务库。
     image: mysql:8.4
-    container_name: test-claw-mysql
+    container_name: site-mysql
     # 除非手动停止或删除容器，否则 Docker 重启后自动拉起数据库。
     restart: unless-stopped
     environment:
@@ -26,8 +26,8 @@ services:
       # 数据库文件落到 Docker volume，容器重建后业务数据不会丢。
       - mysql_data:/var/lib/mysql
     networks:
-      # 加入项目内部网络，后端可通过服务名 mysql 访问它。
-      - test_claw_net
+      # 加入站点共享网络，业务容器可通过服务名 site-mysql 访问它。
+      - site_net
     healthcheck:
       # 等 MySQL 真正可连接后，再允许后端容器启动，减少启动顺序导致的连接失败。
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
@@ -35,10 +35,10 @@ services:
       timeout: 5s
       retries: 12
 
-  redis:
-    # Redis 当前用于生成任务防重的分布式锁，后续多实例部署时仍然共用这把锁。
+  site-redis:
+    # 站点级 Redis，当前用于 AI 生成任务防重分布式锁，后续其他服务也可复用。
     image: redis:7.2-alpine
-    container_name: test-claw-redis
+    container_name: site-redis
     restart: unless-stopped
     # 开启 AOF 持久化，避免 Redis 容器重启后锁相关数据完全丢失。
     command: ["redis-server", "--appendonly", "yes"]
@@ -46,7 +46,7 @@ services:
       # Redis 数据落到 Docker volume，容器重建后仍可保留持久化文件。
       - redis_data:/data
     networks:
-      - test_claw_net
+      - site_net
     healthcheck:
       # 等 Redis 可以响应 ping 后，再允许后端容器启动。
       test: ["CMD", "redis-cli", "ping"]
@@ -54,62 +54,70 @@ services:
       timeout: 5s
       retries: 12
 
-  app:
+  aigen-api:
     # Spring Boot 后端镜像在服务器本地构建，不把 application*.yml 真实配置打进镜像。
     build:
       context: .
       dockerfile: Dockerfile
-    image: test-claw-app:latest
-    container_name: test-claw-app
+    image: aigen-api:latest
+    container_name: aigen-api
     restart: unless-stopped
     # Docker/服务器环境启用 prod 配置，只读取 application-prod.yml 中的 MySQL/Redis 服务名。
     command: ["--spring.profiles.active=prod"]
     volumes:
       # 公共应用配置只读挂载进容器，便于改配置后重启生效，不需要重建镜像。
       - ./src/main/resources/application.yml:/app/config/application.yml:ro
-      # prod 环境连接 Docker 网络内的 mysql / redis 服务名。
+      # prod 环境连接 Docker 网络内的 site-mysql / site-redis 服务名。
       - ./src/main/resources/application-prod.yml:/app/config/application-prod.yml:ro
     depends_on:
       # 后端必须等 MySQL 和 Redis 健康检查通过后再启动。
-      mysql:
+      site-mysql:
         condition: service_healthy
-      redis:
+      site-redis:
         condition: service_healthy
     networks:
-      test_claw_net:
+      site_net:
         aliases:
-          # 给 Nginx 反向代理使用，frontend/nginx.conf 里通过 http://app:8080 访问后端。
-          - app
+          # 给 Nginx 反向代理使用，frontend/nginx.conf 里通过 http://aigen-api:8080 访问后端。
+          - aigen-api
 
-  web:
+  aigen-web:
     # 前端镜像包含 Vue 打包产物和 Nginx 网关配置。
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: test-claw-web:latest
-    container_name: test-claw-web
+    image: aigen-web:latest
+    container_name: aigen-web
     restart: unless-stopped
     ports:
       # 对外暴露网站入口，默认宿主机 80 -> 容器 80。
       - "${WEB_HTTP_PORT:-80}:80"
+      # HTTPS 入口，证书由 Let's Encrypt 写入宿主机 /etc/letsencrypt 后只读挂载。
+      - "${WEB_HTTPS_PORT:-443}:443"
     volumes:
       # Nginx 访问日志挂到宿主机，供限流黑名单脚本读取。
       - ./docker-data/nginx/logs:/var/log/nginx
+      # ACME HTTP-01 校验文件目录，certbot 写入后由 Nginx 对外暴露。
+      - ./docker-data/certbot/www:/var/www/certbot
+      # Let's Encrypt 证书目录只读挂载，避免 Web 容器误改证书文件。
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # Nginx 站点配置运行时挂载，命名、限流或反代调整后重启 Web 容器即可生效。
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       # Nginx 依赖后端容器存在；接口可用性由反向代理转发到 app 服务。
-      - app
+      - aigen-api
     networks:
-      - test_claw_net
+      - site_net
 
 volumes:
   mysql_data:
     # 固定 volume 名称，避免项目目录变化导致 Docker 创建新数据卷。
-    name: test-claw-mysql-data
+    name: site-mysql-data
   redis_data:
     # 固定 volume 名称，便于排查和备份 Redis 持久化文件。
-    name: test-claw-redis-data
+    name: site-redis-data
 
 networks:
-  test_claw_net:
+  site_net:
     # 固定网络名称，方便容器之间通过服务名互相访问，也便于手动排查网络。
-    name: test-claw-net
+    name: site-net

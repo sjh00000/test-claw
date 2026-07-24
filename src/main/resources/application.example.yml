@@ -1,13 +1,13 @@
 spring:
   application:
-    name: keyframe-video-studio
+    name: aigen-studio
   profiles:
     # 本机默认使用 dev；Docker 部署时通过启动参数切到 prod。
     active: dev
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      pool-name: keyframe-video-studio-pool
+      pool-name: aigen-studio-pool
       maximum-pool-size: 10
       minimum-idle: 2
       connection-timeout: 30000
@@ -60,7 +60,7 @@ generation:
     # OSS Bucket 域名，用于保存可访问结果地址。
     bucket-domain: https://videos-sun.oss-cn-chengdu.aliyuncs.com
     # 生成结果在 OSS 中的统一目录前缀。
-    object-prefix: test-claw
+    object-prefix: aigen-studio
   task:
     # 任务 ID 使用紧凑雪花算法，多实例部署时每个实例配置不同 workerId，范围 0-15。
     worker-id: 1

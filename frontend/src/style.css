@@ -50,6 +50,24 @@ svg {
   margin: 0 auto;
 }
 
+.site-record {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 0;
+  color: #5f7690;
+  font-size: 12px;
+}
+
+.site-record a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 220ms ease;
+}
+
+.site-record a:hover {
+  color: #227ed2;
+}
+
 .topbar {
   display: flex;
   align-items: flex-start;

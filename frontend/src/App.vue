@@ -1,6 +1,7 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppHeader from './components/AppHeader.vue'
+import { AUTH_EXPIRED_EVENT } from './lib/api'
 import LoginPage from './pages/LoginPage.vue'
 import LogsPage from './pages/LogsPage.vue'
 import ModelsPage from './pages/ModelsPage.vue'
@@ -35,6 +36,12 @@ function logout() {
   localStorage.removeItem('studioUser')
 }
 
+function handleAuthExpired(event) {
+  // 任意接口返回 401 都代表本地登录态不可继续使用，应用壳层统一回到登录页。
+  logout()
+  errorMessage.value = event?.detail?.message || '登录已过期，请重新登录'
+}
+
 function openPage(page) {
   // 管理页面只允许初始化管理员进入；这里做前端体验拦截，后端接口仍然负责最终权限校验。
   if (['users', 'logs', 'models'].includes(page) && !isAdmin.value) {
@@ -44,6 +51,14 @@ function openPage(page) {
   currentPage.value = page
   errorMessage.value = ''
 }
+
+onMounted(() => {
+  window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
+})
 </script>
 
 <template>
@@ -69,5 +84,10 @@ function openPage(page) {
         <ModelsPage v-else-if="currentPage === 'models' && isAdmin" />
       </template>
     </section>
+    <footer class="site-record">
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">
+        蜀ICP备2026041648号
+      </a>
+    </footer>
   </main>
 </template>
